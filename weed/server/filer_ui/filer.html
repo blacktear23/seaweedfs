@@ -47,6 +47,18 @@
             vertical-align: bottom;
         }
 
+        .table-hover > tbody > tr:hover > * > div.operations {
+            display: block;
+        }
+
+        .table > tbody > tr {
+            height: 39px;
+        }
+
+        div.operations {
+            display: none;
+        }
+
         .footer {
             position: absolute;
             bottom: 0px;
@@ -76,8 +88,12 @@
     <div class="row">
         <div>
             <div class="btn-group btn-group-sm pull-right" role="group" style="margin-top:3px;">
-                <label class="btn btn-default" onclick="handleCreateDir()">New Folder</label>
-                <label class="btn btn-default" for="fileElem">Upload</label>
+                <label class="btn btn-default" onclick="handleCreateDir()">
+                    <span class="glyphicon glyphicon-plus" aria-hidden="true"></span> New Folder
+                </label>
+                <label class="btn btn-default" for="fileElem">
+                    <span class="glyphicon glyphicon-cloud-upload" aria-hidden="true"></span> Upload
+                </label>
             </div>
             <ol class="breadcrumb">
             {{ range $entry := .Breadcrumbs }}
@@ -104,7 +120,7 @@
                 <tr>
                     <td>
                         {{if $entry.IsDirectory}}
-                        <img src="/seaweedfsstatic/images/folder.gif" width="20" height="16">
+                        <span class="glyphicon glyphicon-folder-open" aria-hidden="true"></span>&nbsp;
                         <a href="{{ printpath $path  "/" $entry.Name "/"}}" >
                         {{ $entry.Name }}
                         </a>
@@ -129,13 +145,19 @@
                     <td align="right" nowrap>
                         {{ $entry.Timestamp.Format "2006-01-02 15:04" }}
                     </td>
-                    <td>
-                        <div class="btn-group btn-group-xs pull-right" role="group">
-                            <label class="btn btn-default" onclick="handleRename('{{ $entry.Name }}', '{{ printpath $path "/" }}')">Rename</label>
+                    <td style="width:75px">
+                        <div class="btn-group btn-group-xs pull-right operations" role="group">
+                            <label class="btn" onclick="handleRename('{{ $entry.Name }}', '{{ printpath $path "/" }}')">
+                                <span class="glyphicon glyphicon-edit" aria-hidden="true"></span>
+                            </label>
                             {{if $entry.IsDirectory}}
-                            <label class="btn btn-danger" onclick="handleDelete('{{ printpath $path  "/" $entry.Name "/"  }}')">Delete</label>
+                            <label class="btn" onclick="handleDelete('{{ printpath $path  "/" $entry.Name "/"  }}')">
+                                <span class="glyphicon glyphicon-trash" aria-hidden="true"></span>
+                            </label>
                             {{else}}
-                            <label class="btn btn-danger" onclick="handleDelete('{{ printpath $path  "/" $entry.Name }}')">Delete</label>
+                            <label class="btn" onclick="handleDelete('{{ printpath $path  "/" $entry.Name }}')">
+                                <span class="glyphicon glyphicon-trash" aria-hidden="true"></span>
+                            </label>
                             {{end}}
                         </div>
                     </td>
