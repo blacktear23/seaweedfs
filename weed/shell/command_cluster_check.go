@@ -7,10 +7,9 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/cluster"
 	"github.com/chrislusf/seaweedfs/weed/pb"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
+	"github.com/chrislusf/seaweedfs/weed/pb/master_pb"
 	"github.com/chrislusf/seaweedfs/weed/pb/volume_server_pb"
 	"io"
-
-	"github.com/chrislusf/seaweedfs/weed/pb/master_pb"
 )
 
 func init() {
@@ -48,7 +47,10 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 
 	emptyDiskTypeDiskInfo, emptyDiskTypeFound := topologyInfo.DiskInfos[""]
 	hddDiskTypeDiskInfo, hddDiskTypeFound := topologyInfo.DiskInfos["hdd"]
-	if !emptyDiskTypeFound && !hddDiskTypeFound || emptyDiskTypeDiskInfo.VolumeCount == 0 && hddDiskTypeDiskInfo.VolumeCount == 0 {
+	if !emptyDiskTypeFound && !hddDiskTypeFound {
+		return fmt.Errorf("Need to a hdd disk type!")
+	}
+	if emptyDiskTypeFound && emptyDiskTypeDiskInfo.MaxVolumeCount == 0 || hddDiskTypeFound && hddDiskTypeDiskInfo.MaxVolumeCount == 0 {
 		return fmt.Errorf("Need to a hdd disk type!")
 	}
 
@@ -57,6 +59,7 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 	err = commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
 		resp, err := client.ListClusterNodes(context.Background(), &master_pb.ListClusterNodesRequest{
 			ClientType: cluster.FilerType,
+			FilerGroup: *commandEnv.option.FilerGroup,
 		})
 
 		for _, node := range resp.ClusterNodes {
@@ -95,15 +98,16 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 		for _, volumeServer := range volumeServers {
 			fmt.Fprintf(writer, "checking master %s to volume server %s ... ", string(master), string(volumeServer))
 			err := pb.WithMasterClient(false, master, commandEnv.option.GrpcDialOption, func(client master_pb.SeaweedClient) error {
-				_, err := client.Ping(context.Background(), &master_pb.PingRequest{
+				pong, err := client.Ping(context.Background(), &master_pb.PingRequest{
 					Target:     string(volumeServer),
 					TargetType: cluster.VolumeServerType,
 				})
+				if err == nil {
+					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+				}
 				return err
 			})
-			if err == nil {
-				fmt.Fprintf(writer, "ok\n")
-			} else {
+			if err != nil {
 				fmt.Fprintf(writer, "%v\n", err)
 			}
 		}
@@ -117,15 +121,16 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 			}
 			fmt.Fprintf(writer, "checking master %s to %s ... ", string(sourceMaster), string(targetMaster))
 			err := pb.WithMasterClient(false, sourceMaster, commandEnv.option.GrpcDialOption, func(client master_pb.SeaweedClient) error {
-				_, err := client.Ping(context.Background(), &master_pb.PingRequest{
+				pong, err := client.Ping(context.Background(), &master_pb.PingRequest{
 					Target:     string(targetMaster),
 					TargetType: cluster.MasterType,
 				})
+				if err == nil {
+					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+				}
 				return err
 			})
-			if err == nil {
-				fmt.Fprintf(writer, "ok\n")
-			} else {
+			if err != nil {
 				fmt.Fprintf(writer, "%v\n", err)
 			}
 		}
@@ -136,15 +141,16 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 		for _, master := range masters {
 			fmt.Fprintf(writer, "checking volume server %s to master %s ... ", string(volumeServer), string(master))
 			err := pb.WithVolumeServerClient(false, volumeServer, commandEnv.option.GrpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
-				_, err := client.Ping(context.Background(), &volume_server_pb.PingRequest{
+				pong, err := client.Ping(context.Background(), &volume_server_pb.PingRequest{
 					Target:     string(master),
 					TargetType: cluster.MasterType,
 				})
+				if err == nil {
+					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+				}
 				return err
 			})
-			if err == nil {
-				fmt.Fprintf(writer, "ok\n")
-			} else {
+			if err != nil {
 				fmt.Fprintf(writer, "%v\n", err)
 			}
 		}
@@ -155,15 +161,16 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 		for _, master := range masters {
 			fmt.Fprintf(writer, "checking filer %s to master %s ... ", string(filer), string(master))
 			err := pb.WithFilerClient(false, filer, commandEnv.option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
-				_, err := client.Ping(context.Background(), &filer_pb.PingRequest{
+				pong, err := client.Ping(context.Background(), &filer_pb.PingRequest{
 					Target:     string(master),
 					TargetType: cluster.MasterType,
 				})
+				if err == nil {
+					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+				}
 				return err
 			})
-			if err == nil {
-				fmt.Fprintf(writer, "ok\n")
-			} else {
+			if err != nil {
 				fmt.Fprintf(writer, "%v\n", err)
 			}
 		}
@@ -174,15 +181,16 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 		for _, volumeServer := range volumeServers {
 			fmt.Fprintf(writer, "checking filer %s to volume server %s ... ", string(filer), string(volumeServer))
 			err := pb.WithFilerClient(false, filer, commandEnv.option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
-				_, err := client.Ping(context.Background(), &filer_pb.PingRequest{
+				pong, err := client.Ping(context.Background(), &filer_pb.PingRequest{
 					Target:     string(volumeServer),
 					TargetType: cluster.VolumeServerType,
 				})
+				if err == nil {
+					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+				}
 				return err
 			})
-			if err == nil {
-				fmt.Fprintf(writer, "ok\n")
-			} else {
+			if err != nil {
 				fmt.Fprintf(writer, "%v\n", err)
 			}
 		}
@@ -196,15 +204,16 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 			}
 			fmt.Fprintf(writer, "checking volume server %s to %s ... ", string(sourceVolumeServer), string(targetVolumeServer))
 			err := pb.WithVolumeServerClient(false, sourceVolumeServer, commandEnv.option.GrpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
-				_, err := client.Ping(context.Background(), &volume_server_pb.PingRequest{
+				pong, err := client.Ping(context.Background(), &volume_server_pb.PingRequest{
 					Target:     string(targetVolumeServer),
 					TargetType: cluster.VolumeServerType,
 				})
+				if err == nil {
+					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+				}
 				return err
 			})
-			if err == nil {
-				fmt.Fprintf(writer, "ok\n")
-			} else {
+			if err != nil {
 				fmt.Fprintf(writer, "%v\n", err)
 			}
 		}
@@ -215,19 +224,26 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 		for _, targetFiler := range filers {
 			fmt.Fprintf(writer, "checking filer %s to %s ... ", string(sourceFiler), string(targetFiler))
 			err := pb.WithFilerClient(false, sourceFiler, commandEnv.option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
-				_, err := client.Ping(context.Background(), &filer_pb.PingRequest{
+				pong, err := client.Ping(context.Background(), &filer_pb.PingRequest{
 					Target:     string(targetFiler),
 					TargetType: cluster.FilerType,
 				})
+				if err == nil {
+					printTiming(writer, pong.StartTimeNs, pong.RemoteTimeNs, pong.StopTimeNs)
+				}
 				return err
 			})
-			if err == nil {
-				fmt.Fprintf(writer, "ok\n")
-			} else {
+			if err != nil {
 				fmt.Fprintf(writer, "%v\n", err)
 			}
 		}
 	}
 
 	return nil
+}
+
+func printTiming(writer io.Writer, startNs, remoteNs, stopNs int64) {
+	roundTripTimeMs := float32(stopNs-startNs) / 1000000
+	deltaTimeMs := float32(remoteNs-(startNs+stopNs)/2) / 1000000
+	fmt.Fprintf(writer, "ok round trip %.3fms clock delta %.3fms\n", roundTripTimeMs, deltaTimeMs)
 }

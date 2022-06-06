@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
 	"google.golang.org/grpc/reflection"
@@ -36,6 +37,7 @@ type FilerOptions struct {
 	port                    *int
 	portGrpc                *int
 	publicPort              *int
+	filerGroup              *string
 	collection              *string
 	defaultReplicaPlacement *string
 	disableDirListing       *bool
@@ -58,6 +60,7 @@ type FilerOptions struct {
 func init() {
 	cmdFiler.Run = runFiler // break init cycle
 	f.mastersString = cmdFiler.Flag.String("master", "localhost:9333", "comma-separated master servers")
+	f.filerGroup = cmdFiler.Flag.String("filerGroup", "", "share metadata with other filers in the same filerGroup")
 	f.collection = cmdFiler.Flag.String("collection", "", "all data will be stored in this default collection")
 	f.ip = cmdFiler.Flag.String("ip", util.DetectedHostAddress(), "filer server http listen ip address")
 	f.bindIp = cmdFiler.Flag.String("ip.bind", "", "ip address to bind to. If empty, default to same as -ip option.")
@@ -83,6 +86,7 @@ func init() {
 	// start s3 on filer
 	filerStartS3 = cmdFiler.Flag.Bool("s3", false, "whether to start S3 gateway")
 	filerS3Options.port = cmdFiler.Flag.Int("s3.port", 8333, "s3 server http listen port")
+	filerS3Options.portGrpc = cmdFiler.Flag.Int("s3.port.grpc", 0, "s3 server grpc listen port")
 	filerS3Options.domainName = cmdFiler.Flag.String("s3.domainName", "", "suffix of the host name in comma separated list, {bucket}.{domainName}")
 	filerS3Options.tlsPrivateKey = cmdFiler.Flag.String("s3.key.file", "", "path to the TLS private key file")
 	filerS3Options.tlsCertificate = cmdFiler.Flag.String("s3.cert.file", "", "path to the TLS certificate file")
@@ -200,6 +204,7 @@ func (fo *FilerOptions) startFiler() {
 
 	fs, nfs_err := weed_server.NewFilerServer(defaultMux, publicVolumeMux, &weed_server.FilerOption{
 		Masters:               fo.masters,
+		FilerGroup:            *fo.filerGroup,
 		Collection:            *fo.collection,
 		DefaultReplication:    *fo.defaultReplicaPlacement,
 		DisableDirListing:     *fo.disableDirListing,
@@ -248,18 +253,6 @@ func (fo *FilerOptions) startFiler() {
 		glog.Fatalf("Filer listener error: %v", e)
 	}
 
-	// start on local unix socket
-	if *fo.localSocket == "" {
-		*fo.localSocket = fmt.Sprintf("/tmp/seaweefs-filer-%d.sock", *fo.port)
-		if err := os.Remove(*fo.localSocket); err != nil && !os.IsNotExist(err) {
-			glog.Fatalf("Failed to remove %s, error: %s", *fo.localSocket, err.Error())
-		}
-	}
-	filerSocketListener, err := net.Listen("unix", *fo.localSocket)
-	if err != nil {
-		glog.Fatalf("Failed to listen on %s: %v", *fo.localSocket, err)
-	}
-
 	// starting grpc server
 	grpcPort := *fo.portGrpc
 	grpcL, grpcLocalL, err := util.NewIpAndLocalListeners(*fo.bindIp, grpcPort, 0)
@@ -275,9 +268,22 @@ func (fo *FilerOptions) startFiler() {
 	go grpcS.Serve(grpcL)
 
 	httpS := &http.Server{Handler: defaultMux}
-	go func() {
-		httpS.Serve(filerSocketListener)
-	}()
+	if runtime.GOOS != "windows" {
+		if *fo.localSocket == "" {
+			*fo.localSocket = fmt.Sprintf("/tmp/seaweefs-filer-%d.sock", *fo.port)
+			if err := os.Remove(*fo.localSocket); err != nil && !os.IsNotExist(err) {
+				glog.Fatalf("Failed to remove %s, error: %s", *fo.localSocket, err.Error())
+			}
+		}
+		go func() {
+			// start on local unix socket
+			filerSocketListener, err := net.Listen("unix", *fo.localSocket)
+			if err != nil {
+				glog.Fatalf("Failed to listen on %s: %v", *fo.localSocket, err)
+			}
+			httpS.Serve(filerSocketListener)
+		}()
+	}
 	if filerLocalListener != nil {
 		go func() {
 			if err := httpS.Serve(filerLocalListener); err != nil {

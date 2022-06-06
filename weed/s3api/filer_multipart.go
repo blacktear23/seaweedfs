@@ -5,6 +5,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	"golang.org/x/exp/slices"
+	"math"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -13,7 +15,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/google/uuid"
 
 	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/chrislusf/seaweedfs/weed/glog"
@@ -29,8 +30,7 @@ func (s3a *S3ApiServer) createMultipartUpload(input *s3.CreateMultipartUploadInp
 
 	glog.V(2).Infof("createMultipartUpload input %v", input)
 
-	uploadId, _ := uuid.NewRandom()
-	uploadIdString := uploadId.String()
+	uploadIdString := s3a.generateUploadID(*input.Key)
 
 	if err := s3a.mkdir(s3a.genUploadsFolder(*input.Bucket), uploadIdString, func(entry *filer_pb.Entry) {
 		if entry.Extended == nil {
@@ -69,8 +69,8 @@ func (s3a *S3ApiServer) completeMultipartUpload(input *s3.CompleteMultipartUploa
 	glog.V(2).Infof("completeMultipartUpload input %v", input)
 
 	completedParts := parts.Parts
-	sort.Slice(completedParts, func(i, j int) bool {
-		return completedParts[i].PartNumber < completedParts[j].PartNumber
+	slices.SortFunc(completedParts, func(a, b CompletedPart) bool {
+		return a.PartNumber < b.PartNumber
 	})
 
 	uploadDirectory := s3a.genUploadsFolder(*input.Bucket) + "/" + *input.UploadId
@@ -178,6 +178,9 @@ func findByPartNumber(fileName string, parts []CompletedPart) (etag string, foun
 	x := sort.Search(len(parts), func(i int) bool {
 		return parts[i].PartNumber >= partNumber
 	})
+	if x >= len(parts) {
+		return
+	}
 	if parts[x].PartNumber != partNumber {
 		return
 	}
@@ -243,13 +246,13 @@ func (s3a *S3ApiServer) listMultipartUploads(input *s3.ListMultipartUploadsInput
 		Prefix:       input.Prefix,
 	}
 
-	entries, isLast, err := s3a.list(s3a.genUploadsFolder(*input.Bucket), "", *input.UploadIdMarker, false, uint32(*input.MaxUploads))
+	entries, _, err := s3a.list(s3a.genUploadsFolder(*input.Bucket), "", *input.UploadIdMarker, false, math.MaxInt32)
 	if err != nil {
 		glog.Errorf("listMultipartUploads %s error: %v", *input.Bucket, err)
 		return
 	}
-	output.IsTruncated = aws.Bool(!isLast)
 
+	uploadsCount := int64(0)
 	for _, entry := range entries {
 		if entry.Extended != nil {
 			key := string(entry.Extended["key"])
@@ -263,9 +266,12 @@ func (s3a *S3ApiServer) listMultipartUploads(input *s3.ListMultipartUploadsInput
 				Key:      objectKey(aws.String(key)),
 				UploadId: aws.String(entry.Name),
 			})
-			if !isLast {
-				output.NextUploadIdMarker = aws.String(entry.Name)
-			}
+			uploadsCount += 1
+		}
+		if uploadsCount >= *input.MaxUploads {
+			output.IsTruncated = aws.Bool(true)
+			output.NextUploadIdMarker = aws.String(entry.Name)
+			break
 		}
 	}
 

@@ -3,6 +3,7 @@ package s3api
 import (
 	"context"
 	"fmt"
+	"github.com/chrislusf/seaweedfs/weed/pb/s3_pb"
 	"net"
 	"net/http"
 	"strings"
@@ -31,6 +32,7 @@ type S3ApiServerOption struct {
 }
 
 type S3ApiServer struct {
+	s3_pb.UnimplementedSeaweedS3Server
 	option         *S3ApiServerOption
 	iam            *IdentityAccessManagement
 	randomClientId int32
@@ -54,7 +56,7 @@ func NewS3ApiServer(router *mux.Router, option *S3ApiServerOption) (s3ApiServer 
 		randomClientId: util.RandomInt32(),
 		filerGuard:     security.NewGuard([]string{}, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec),
 	}
-	if option.LocalFilerSocket == nil {
+	if option.LocalFilerSocket == nil || *option.LocalFilerSocket == "" {
 		s3ApiServer.client = &http.Client{Transport: &http.Transport{
 			MaxIdleConns:        1024,
 			MaxIdleConnsPerHost: 1024,
