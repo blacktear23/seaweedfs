@@ -90,10 +90,6 @@ func (vc *vidMap) LookupVolumeServerUrl(vid string) (serverUrls []string, err er
 	return
 }
 
-func (vc *vidMap) GetLookupFileIdFunction() LookupFileIdFunctionType {
-	return vc.LookupFileId
-}
-
 func (vc *vidMap) LookupFileId(fileId string) (fullUrls []string, err error) {
 	parts := strings.Split(fileId, ",")
 	if len(parts) != 2 {
@@ -133,7 +129,7 @@ func (vc *vidMap) GetLocations(vid uint32) (locations []Location, found bool) {
 		return
 	}
 	locations, found = vc.ecVid2Locations[vid]
-	return
+	return locations, found && len(locations) > 0
 }
 
 func (vc *vidMap) addLocation(vid uint32, location Location) {
