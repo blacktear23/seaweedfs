@@ -152,7 +152,7 @@ require (
 	github.com/hanwen/go-fuse/v2 v2.1.1-0.20220531082602-17a864ed5940
 	github.com/hashicorp/raft v1.3.9
 	github.com/hashicorp/raft-boltdb v0.0.0-20220329195025-15018e9b97e0
-	github.com/iceber/iouring-go v0.0.0-20211009021147-43b176a6a8c5
+	github.com/iceber/iouring-go v0.0.0-20220609112130-b1dc8dd9fbfd
 	github.com/tikv/client-go/v2 v2.0.1
 	github.com/ydb-platform/ydb-go-sdk-auth-environ v0.1.2
 	github.com/ydb-platform/ydb-go-sdk/v3 v3.27.0
