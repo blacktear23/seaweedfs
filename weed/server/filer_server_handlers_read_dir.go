@@ -79,20 +79,24 @@ func (fs *FilerServer) listDirectoryHandler(w http.ResponseWriter, r *http.Reque
 		Entries               interface{}
 		Limit                 int
 		LastFileName          string
+		NamePattern           string
 		ShouldDisplayLoadMore bool
 		EmptyFolder           bool
 		ShowDirectoryDelete   bool
 		EnableUploadFromUrl   bool
+		HaveNamePattern       bool
 	}{
 		path,
 		ui.ToBreadcrumb(path),
 		entries,
 		limit,
 		lastFileName,
+		namePattern,
 		shouldDisplayLoadMore,
 		emptyFolder,
 		fs.option.ShowUIDirectoryDelete,
 		fs.option.EnableUploadFromUrl,
+		namePattern != "",
 	})
 	if err != nil {
 		glog.V(0).Infof("Template Execute Error: %v", err)

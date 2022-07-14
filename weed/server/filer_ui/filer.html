@@ -99,6 +99,14 @@
                     <span class="glyphicon glyphicon-cloud-upload" aria-hidden="true"></span> Upload From URL
                 </label>
                 {{ end }}
+                <span class="input-group input-group-sm" style="width:180px;">
+                    <input id="search-input" type="text" class="form-control" placeholder="Search">
+                    <span class="input-group-btn">
+                        <button class="btn btn-default" type="button" onclick="handleSearch()">
+                            <span class="glyphicon glyphicon-search" aria-hidden="true"></span>
+                        </button>
+                    </span>
+                </span>
             </div>
             <ol class="breadcrumb">
             {{ range $entry := .Breadcrumbs }}
@@ -175,9 +183,15 @@
 
     {{ if .ShouldDisplayLoadMore }}
     <div class="row">
-        <a href={{ print .Path "?limit=" .Limit "&lastFileName=" .LastFileName }} >
+        {{ if .HaveNamePattern }}
+        <a href={{ print .Path "?limit=" .Limit "&lastFileName=" .LastFileName "&namePattern=" .NamePattern }}>
         Load more
         </a>
+        {{ else }}
+        <a href={{ print .Path "?limit=" .Limit "&lastFileName=" .LastFileName }}>
+        Load more
+        </a>
+        {{ end }}
     </div>
     {{ end }}
 
@@ -188,17 +202,58 @@
 </div>
 </body>
 <script type="text/javascript">
+    // **** Search Function **** //
+    let searchInput = document.getElementById("search-input");
+    searchInput.addEventListener("keypress", function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            handleSearch();
+        }
+    });
+
+    function initSearchText() {
+        let params = new URLSearchParams(window.location.search);
+        let pattern = params.get("namePattern");
+        if (pattern === null) {
+            return;
+        }
+        let search = '';
+        if (pattern[0] === '*' && pattern[pattern.length - 1] === '*') {
+            search = pattern.substring(1, pattern.length - 1);
+        }
+        searchInput.value = search;
+    }
+
+    initSearchText();
+
+    function handleSearch() {
+        let search = searchInput.value;
+        let url = new URL(window.location.href);
+        let params = new URLSearchParams(url.search);
+        if (search === '') {
+            params.delete('namePattern');
+        } else {
+            let pattern = "*" + search + "*";
+            if (search === "*") {
+                pattern = "*";
+            }
+            params.set('namePattern', pattern);
+        }
+        url.search = params.toString();
+        window.location.href = url.toString();
+    }
+
     // ************************ Drag and drop ***************** //
     let dropArea = document.getElementById("drop-area");
     let progressArea = document.getElementById("progress-area");
 
-// Prevent default drag behaviors
+    // Prevent default drag behaviors
     ;['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         dropArea.addEventListener(eventName, preventDefaults, false);
         document.body.addEventListener(eventName, preventDefaults, false);
     });
 
-// Highlight drop area when item is dragged over it
+    // Highlight drop area when item is dragged over it
     ;['dragenter', 'dragover'].forEach(eventName => {
         dropArea.addEventListener(eventName, highlight, false);
     });
@@ -249,7 +304,7 @@
 
     function renderProgress(forceLoading) {
         var values = Object.values(uploadList);
-        var html = '<table class="table">\n<tr><th>Uploading</th><\/tr>\n';
+        var html = '<table class="table">\n<tr><th>Uploading</th></tr>\n';
         for (let i of values) {
             var progressBarClass = 'progress-bar-striped active';
             if (i.percent >= 100 && !forceLoading) {
@@ -259,9 +314,9 @@
             html += '<div class="progress" style="margin-bottom: 2px;">\n';
             html += '<div class="progress-bar ' + progressBarClass + '" role="progressbar" aria-valuenow="' + '100" aria-valuemin="0" aria-valuemax="100" style="width:' + i.percent + '%;">';
             if (forceLoading) {
-                html += '<span style="margin-right: 10px;">' + i.name + '</span><\/div>';
+                html += '<span style="margin-right: 10px;">' + i.name + '</span></div>';
             } else {
-                html += '<span style="margin-right: 10px;">' + i.name + '</span>' + i.percent + '%<\/div>';
+                html += '<span style="margin-right: 10px;">' + i.name + '</span>' + i.percent + '%</div>';
             }
             html += '<\/div>\n<\/td>\n<\/tr>\n';
         }
