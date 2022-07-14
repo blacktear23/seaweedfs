@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/filer"
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/chrislusf/seaweedfs/weed/filer"
 
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"github.com/chrislusf/seaweedfs/weed/pb/iam_pb"
@@ -162,6 +163,10 @@ func (c *commandS3Configure) Do(args []string, commandEnv *CommandEnv, writer io
 				&iam_pb.Credential{AccessKey: *accessKey, SecretKey: *secretKey})
 		}
 		s3cfg.Identities = append(s3cfg.Identities, &identity)
+	}
+
+	if err = filer.CheckDuplicateAccessKey(s3cfg); err != nil {
+		return err
 	}
 
 	buf.Reset()
