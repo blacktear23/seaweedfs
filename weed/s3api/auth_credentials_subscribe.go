@@ -1,12 +1,12 @@
 package s3api
 
 import (
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func (s3a *S3ApiServer) subscribeMetaEvents(clientName string, prefix string, lastTsNs int64) {
@@ -32,8 +32,10 @@ func (s3a *S3ApiServer) subscribeMetaEvents(clientName string, prefix string, la
 		return nil
 	}
 
+	var clientEpoch int32
 	util.RetryForever("followIamChanges", func() error {
-		return pb.WithFilerClientFollowMetadata(s3a, clientName, s3a.randomClientId, prefix, &lastTsNs, 0, 0, processEventFn, pb.FatalOnError)
+		clientEpoch++
+		return pb.WithFilerClientFollowMetadata(s3a, clientName, s3a.randomClientId, clientEpoch, prefix, &lastTsNs, 0, 0, processEventFn, pb.FatalOnError)
 	}, func(err error) bool {
 		glog.V(0).Infof("iam follow metadata changes: %v", err)
 		return true

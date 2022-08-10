@@ -2,16 +2,16 @@ package command
 
 import (
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/pb"
 	"github.com/golang/protobuf/jsonpb"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/security"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/security"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func init() {
@@ -110,7 +110,7 @@ func runFilerMetaTail(cmd *Command, args []string) bool {
 		untilTsNs = time.Now().Add(-*tailStop).UnixNano()
 	}
 
-	tailErr := pb.FollowMetadata(pb.ServerAddress(*tailFiler), grpcDialOption, "tail", clientId, *tailTarget, nil,
+	tailErr := pb.FollowMetadata(pb.ServerAddress(*tailFiler), grpcDialOption, "tail", clientId, 0, *tailTarget, nil,
 		time.Now().Add(-*tailStart).UnixNano(), untilTsNs, 0, func(resp *filer_pb.SubscribeMetadataResponse) error {
 			if !shouldPrint(resp) {
 				return nil

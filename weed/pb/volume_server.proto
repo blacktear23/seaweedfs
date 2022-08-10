@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package volume_server_pb;
-option go_package = "github.com/chrislusf/seaweedfs/weed/pb/volume_server_pb";
+option go_package = "github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb";
 
 import "remote.proto";
 
@@ -147,6 +147,7 @@ message VacuumVolumeCompactRequest {
 }
 message VacuumVolumeCompactResponse {
     int64 processed_bytes = 1;
+    float load_avg_1m = 2;
 }
 
 message VacuumVolumeCommitRequest {

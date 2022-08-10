@@ -7,11 +7,11 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/util"
-	"github.com/chrislusf/seaweedfs/weed/util/chunk_cache"
-	"github.com/chrislusf/seaweedfs/weed/wdclient"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/util/chunk_cache"
+	"github.com/seaweedfs/seaweedfs/weed/wdclient"
 )
 
 type ChunkReadAt struct {
@@ -66,17 +66,25 @@ func LookupFn(filerClient filer_pb.FilerClient) wdclient.LookupFileIdFunctionTyp
 			return nil, err
 		}
 
+		fcDataCenter := filerClient.GetDataCenter()
+		var sameDcTargetUrls, otherTargetUrls []string
 		for _, loc := range locations.Locations {
 			volumeServerAddress := filerClient.AdjustedUrl(loc)
 			targetUrl := fmt.Sprintf("http://%s/%s", volumeServerAddress, fileId)
-			targetUrls = append(targetUrls, targetUrl)
+			if fcDataCenter == "" || fcDataCenter != loc.DataCenter {
+				otherTargetUrls = append(otherTargetUrls, targetUrl)
+			} else {
+				sameDcTargetUrls = append(sameDcTargetUrls, targetUrl)
+			}
 		}
-
-		for i := len(targetUrls) - 1; i > 0; i-- {
-			j := rand.Intn(i + 1)
-			targetUrls[i], targetUrls[j] = targetUrls[j], targetUrls[i]
-		}
-
+		rand.Shuffle(len(sameDcTargetUrls), func(i, j int) {
+			sameDcTargetUrls[i], sameDcTargetUrls[j] = sameDcTargetUrls[j], sameDcTargetUrls[i]
+		})
+		rand.Shuffle(len(otherTargetUrls), func(i, j int) {
+			otherTargetUrls[i], otherTargetUrls[j] = otherTargetUrls[j], otherTargetUrls[i]
+		})
+		// Prefer same data center
+		targetUrls = append(sameDcTargetUrls, otherTargetUrls...)
 		return
 	}
 }

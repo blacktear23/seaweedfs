@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/chrislusf/raft"
 	hashicorpRaft "github.com/hashicorp/raft"
+	"github.com/seaweedfs/raft"
 
-	ui "github.com/chrislusf/seaweedfs/weed/server/master_ui"
-	"github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	ui "github.com/seaweedfs/seaweedfs/weed/server/master_ui"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func (ms *MasterServer) uiStatusHandler(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +26,7 @@ func (ms *MasterServer) uiStatusHandler(w http.ResponseWriter, r *http.Request) 
 			VolumeSizeLimitMB uint32
 		}{
 			util.Version(),
-			ms.Topo.ToMap(),
+			ms.Topo.ToInfo(),
 			ms.Topo.RaftServer,
 			infos,
 			serverStats,
@@ -43,7 +43,7 @@ func (ms *MasterServer) uiStatusHandler(w http.ResponseWriter, r *http.Request) 
 			VolumeSizeLimitMB uint32
 		}{
 			util.Version(),
-			ms.Topo.ToMap(),
+			ms.Topo.ToInfo(),
 			ms.Topo.HashicorpRaft,
 			infos,
 			serverStats,

@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
-	"github.com/chrislusf/seaweedfs/weed/security"
-	"github.com/chrislusf/seaweedfs/weed/util/mem"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
+	"github.com/seaweedfs/seaweedfs/weed/security"
+	"github.com/seaweedfs/seaweedfs/weed/util/mem"
 	"golang.org/x/exp/slices"
 	"io"
 	"net/http"
@@ -16,15 +16,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/pquerna/cachecontrol/cacheobject"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	weed_server "github.com/chrislusf/seaweedfs/weed/server"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	weed_server "github.com/seaweedfs/seaweedfs/weed/server"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 const (
@@ -445,9 +445,9 @@ func (s3a *S3ApiServer) putToFiler(r *http.Request, uploadUrl string, dataReader
 func setEtag(w http.ResponseWriter, etag string) {
 	if etag != "" {
 		if strings.HasPrefix(etag, "\"") {
-			w.Header().Set("ETag", etag)
+			w.Header()["ETag"] = []string{etag}
 		} else {
-			w.Header().Set("ETag", "\""+etag+"\"")
+			w.Header()["ETag"] = []string{"\"" + etag + "\""}
 		}
 	}
 }

@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb/iam_pb"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 
 	"github.com/aws/aws-sdk-go/service/iam"
 )
@@ -219,9 +219,7 @@ func (iama *IamApiServer) PutUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values
 		if userName != ident.Name {
 			continue
 		}
-		for _, action := range actions {
-			ident.Actions = append(ident.Actions, action)
-		}
+		ident.Actions = actions
 		return resp, nil
 	}
 	return resp, fmt.Errorf("%s: the user with name %s cannot be found", iam.ErrCodeNoSuchEntityException, userName)
@@ -349,7 +347,8 @@ func (iama *IamApiServer) CreateAccessKey(s3cfg *iam_pb.S3ApiConfiguration, valu
 	}
 	if !changed {
 		s3cfg.Identities = append(s3cfg.Identities,
-			&iam_pb.Identity{Name: userName,
+			&iam_pb.Identity{
+				Name: userName,
 				Credentials: []*iam_pb.Credential{
 					{
 						AccessKey: accessKeyId,

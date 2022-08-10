@@ -2,9 +2,9 @@ package filer
 
 import (
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/util/chunk_cache"
-	"github.com/chrislusf/seaweedfs/weed/util/mem"
-	"github.com/chrislusf/seaweedfs/weed/wdclient"
+	"github.com/seaweedfs/seaweedfs/weed/util/chunk_cache"
+	"github.com/seaweedfs/seaweedfs/weed/util/mem"
+	"github.com/seaweedfs/seaweedfs/weed/wdclient"
 	"sync"
 	"time"
 )
@@ -76,7 +76,9 @@ func (rc *ReaderCache) ReadChunkAt(buffer []byte, fileId string, cipherKey []byt
 	rc.Lock()
 	defer rc.Unlock()
 	if cacher, found := rc.downloaders[fileId]; found {
-		return cacher.readChunkAt(buffer, offset)
+		if n, err := cacher.readChunkAt(buffer, offset); n != 0 && err == nil {
+			return n, err
+		}
 	}
 	if shouldCache || rc.lookupFileIdFn == nil {
 		n, err := rc.chunkCache.ReadChunkAt(buffer, fileId, uint64(offset))
@@ -176,6 +178,9 @@ func (s *SingleChunkCacher) startCaching() {
 }
 
 func (s *SingleChunkCacher) destroy() {
+	s.Lock()
+	defer s.Unlock()
+
 	if s.data != nil {
 		mem.Free(s.data)
 		s.data = nil
@@ -192,6 +197,10 @@ func (s *SingleChunkCacher) readChunkAt(buf []byte, offset int64) (int, error) {
 
 	if s.err != nil {
 		return 0, s.err
+	}
+
+	if len(s.data) == 0 {
+		return 0, nil
 	}
 
 	return copy(buf, s.data[offset:]), nil

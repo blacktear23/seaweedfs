@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/remote_pb"
-	"github.com/chrislusf/seaweedfs/weed/remote_storage"
-	"github.com/chrislusf/seaweedfs/weed/replication/source"
-	"github.com/chrislusf/seaweedfs/weed/util"
 	"github.com/golang/protobuf/proto"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/remote_pb"
+	"github.com/seaweedfs/seaweedfs/weed/remote_storage"
+	"github.com/seaweedfs/seaweedfs/weed/replication/source"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"google.golang.org/grpc"
 )
 
@@ -40,7 +40,8 @@ func followUpdatesAndUploadToRemote(option *RemoteSyncOptions, filerSource *sour
 
 	lastOffsetTs := collectLastSyncOffset(option, option.grpcDialOption, pb.ServerAddress(*option.filerAddress), mountedDir, *option.timeAgo)
 
-	return pb.FollowMetadata(pb.ServerAddress(*option.filerAddress), option.grpcDialOption, "filer.remote.sync", option.clientId,
+	option.clientEpoch++
+	return pb.FollowMetadata(pb.ServerAddress(*option.filerAddress), option.grpcDialOption, "filer.remote.sync", option.clientId, option.clientEpoch,
 		mountedDir, []string{filer.DirectoryEtcRemote}, lastOffsetTs.UnixNano(), 0, 0, processEventFnWithOffset, pb.TrivialOnError)
 }
 

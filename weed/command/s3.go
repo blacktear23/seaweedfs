@@ -3,22 +3,22 @@ package command
 import (
 	"context"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"google.golang.org/grpc/reflection"
 	"net/http"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/s3_pb"
-	"github.com/chrislusf/seaweedfs/weed/security"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/s3_pb"
+	"github.com/seaweedfs/seaweedfs/weed/security"
 
 	"github.com/gorilla/mux"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/s3api"
-	stats_collect "github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/s3api"
+	stats_collect "github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 var (
@@ -39,6 +39,7 @@ type S3Options struct {
 	allowDeleteBucketNotEmpty *bool
 	auditLogConfig            *string
 	localFilerSocket          *string
+	dataCenter                *string
 }
 
 func init() {
@@ -48,6 +49,7 @@ func init() {
 	s3StandaloneOptions.port = cmdS3.Flag.Int("port", 8333, "s3 server http listen port")
 	s3StandaloneOptions.portGrpc = cmdS3.Flag.Int("port.grpc", 0, "s3 server grpc listen port")
 	s3StandaloneOptions.domainName = cmdS3.Flag.String("domainName", "", "suffix of the host name in comma separated list, {bucket}.{domainName}")
+	s3StandaloneOptions.dataCenter = cmdS3.Flag.String("dataCenter", "", "prefer to read and write to volumes in this data center")
 	s3StandaloneOptions.config = cmdS3.Flag.String("config", "", "path to the config file")
 	s3StandaloneOptions.auditLogConfig = cmdS3.Flag.String("auditLogConfig", "", "path to the audit log config file")
 	s3StandaloneOptions.tlsPrivateKey = cmdS3.Flag.String("key.file", "", "path to the TLS private key file")
@@ -193,6 +195,7 @@ func (s3opt *S3Options) startS3Server() bool {
 		AllowEmptyFolder:          *s3opt.allowEmptyFolder,
 		AllowDeleteBucketNotEmpty: *s3opt.allowDeleteBucketNotEmpty,
 		LocalFilerSocket:          s3opt.localFilerSocket,
+		DataCenter:                *s3opt.dataCenter,
 	})
 	if s3ApiServer_err != nil {
 		glog.Fatalf("S3 API Server startup error: %v", s3ApiServer_err)

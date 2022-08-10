@@ -3,10 +3,10 @@ package storage
 import (
 	"os"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/storage/idx"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle_map"
-	. "github.com/chrislusf/seaweedfs/weed/storage/types"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/storage/idx"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle_map"
+	. "github.com/seaweedfs/seaweedfs/weed/storage/types"
 )
 
 type NeedleMap struct {
@@ -33,7 +33,7 @@ func LoadCompactNeedleMap(file *os.File) (*NeedleMap, error) {
 }
 
 func doLoading(file *os.File, nm *NeedleMap) (*NeedleMap, error) {
-	e := idx.WalkIndexFile(file, func(key NeedleId, offset Offset, size Size) error {
+	e := idx.WalkIndexFile(file, 0, func(key NeedleId, offset Offset, size Size) error {
 		nm.MaybeSetMaxFileKey(key)
 		if !offset.IsZero() && size.IsValid() {
 			nm.FileCounter++

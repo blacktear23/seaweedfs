@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
 var RetryWaitTime = 6 * time.Second
@@ -32,7 +32,7 @@ func Retry(name string, job func() error) (err error) {
 	return err
 }
 
-func RetryForever(name string, job func() error, onErrFn func(err error) bool) {
+func RetryForever(name string, job func() error, onErrFn func(err error) (shouldContinue bool)) {
 	waitTime := time.Second
 	for {
 		err := job()

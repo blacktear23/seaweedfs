@@ -10,26 +10,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/storage/types"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 
-	"github.com/chrislusf/seaweedfs/weed/util/grace"
+	"github.com/seaweedfs/seaweedfs/weed/util/grace"
 
-	"github.com/chrislusf/seaweedfs/weed/pb"
-	"github.com/chrislusf/seaweedfs/weed/security"
-	"github.com/chrislusf/seaweedfs/weed/util/httpdown"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/security"
+	"github.com/seaweedfs/seaweedfs/weed/util/httpdown"
 
 	"google.golang.org/grpc/reflection"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb/volume_server_pb"
-	weed_server "github.com/chrislusf/seaweedfs/weed/server"
-	stats_collect "github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/storage"
-	"github.com/chrislusf/seaweedfs/weed/storage/backend"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
+	weed_server "github.com/seaweedfs/seaweedfs/weed/server"
+	stats_collect "github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/storage"
+	"github.com/seaweedfs/seaweedfs/weed/storage/backend"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 var (
@@ -197,9 +197,7 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 	}
 
 	// security related white list configuration
-	if volumeWhiteListOption != "" {
-		v.whiteList = strings.Split(volumeWhiteListOption, ",")
-	}
+	v.whiteList = util.StringSplit(volumeWhiteListOption, ",")
 
 	if *v.ip == "" {
 		*v.ip = util.DetectedHostAddress()

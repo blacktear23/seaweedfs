@@ -6,11 +6,11 @@ package ydb
 import (
 	"context"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/filer/abstract_sql"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/filer/abstract_sql"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	environ "github.com/ydb-platform/ydb-go-sdk-auth-environ"
 	"github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/sugar"
@@ -319,6 +319,8 @@ func (store *YdbStore) RollbackTransaction(ctx context.Context) error {
 func (store *YdbStore) Shutdown() {
 	_ = store.DB.Close(context.Background())
 }
+
+var _ filer.BucketAware = (*YdbStore)(nil)
 
 func (store *YdbStore) CanDropWholeBucket() bool {
 	return store.SupportBucketTable

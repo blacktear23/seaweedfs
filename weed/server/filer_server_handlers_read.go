@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
-	"github.com/chrislusf/seaweedfs/weed/util/mem"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
+	"github.com/seaweedfs/seaweedfs/weed/util/mem"
 	"io"
 	"math"
 	"mime"
@@ -15,12 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/images"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/images"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 // Validates the preconditions. Returns true if GET/HEAD operation should not proceed.
@@ -238,7 +238,7 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 
-		err = filer.StreamContent(fs.filer.MasterClient, writer, chunks, offset, size)
+		err = filer.StreamContentWithThrottler(fs.filer.MasterClient, writer, chunks, offset, size, fs.option.DownloadMaxBytesPs)
 		if err != nil {
 			stats.FilerRequestCounter.WithLabelValues(stats.ErrorReadStream).Inc()
 			glog.Errorf("failed to stream content %s: %v", r.URL, err)

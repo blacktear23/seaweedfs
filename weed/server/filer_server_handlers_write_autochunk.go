@@ -11,15 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
-
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/operation"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/operation"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func (fs *FilerServer) autoChunk(ctx context.Context, w http.ResponseWriter, r *http.Request, contentLength int64, so *operation.StorageOption) {
@@ -34,12 +33,6 @@ func (fs *FilerServer) autoChunk(ctx context.Context, w http.ResponseWriter, r *
 	}
 
 	chunkSize := 1024 * 1024 * maxMB
-
-	stats.FilerRequestCounter.WithLabelValues("chunk").Inc()
-	start := time.Now()
-	defer func() {
-		stats.FilerRequestHistogram.WithLabelValues("chunk").Observe(time.Since(start).Seconds())
-	}()
 
 	var reply *FilerPostResult
 	var err error

@@ -6,15 +6,15 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/storage/backend"
-	idx2 "github.com/chrislusf/seaweedfs/weed/storage/idx"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle_map"
-	"github.com/chrislusf/seaweedfs/weed/storage/super_block"
-	. "github.com/chrislusf/seaweedfs/weed/storage/types"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/storage/backend"
+	idx2 "github.com/seaweedfs/seaweedfs/weed/storage/idx"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle_map"
+	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
+	. "github.com/seaweedfs/seaweedfs/weed/storage/types"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 type ProgressFunc func(processed int64) bool
@@ -88,7 +88,15 @@ func (v *Volume) Compact2(preallocate int64, compactionBytePerSecond int64, prog
 	if err := v.nm.Sync(); err != nil {
 		glog.V(0).Infof("compact2 fail to sync volume idx %d: %v", v.Id, err)
 	}
-	return copyDataBasedOnIndexFile(v.FileName(".dat"), v.FileName(".idx"), v.FileName(".cpd"), v.FileName(".cpx"), v.SuperBlock, v.Version(), preallocate, compactionBytePerSecond, progressFn)
+	return copyDataBasedOnIndexFile(
+		v.FileName(".dat"), v.FileName(".idx"),
+		v.FileName(".cpd"), v.FileName(".cpx"),
+		v.SuperBlock,
+		v.Version(),
+		preallocate,
+		compactionBytePerSecond,
+		progressFn,
+	)
 }
 
 func (v *Volume) CommitCompact() error {
@@ -297,7 +305,7 @@ func (v *Volume) makeupDiff(newDatFileName, newIdxFileName, oldDatFileName, oldI
 			}
 			util.Uint32toBytes(idxEntryBytes[8:12], uint32(offset/NeedlePaddingSize))
 		} else { //deleted needle
-			//fakeDelNeedle 's default Data field is nil
+			//fakeDelNeedle's default Data field is nil
 			fakeDelNeedle := new(needle.Needle)
 			fakeDelNeedle.Id = key
 			fakeDelNeedle.Cookie = 0x12345678

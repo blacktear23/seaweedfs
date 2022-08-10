@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/storage/super_block"
-	"github.com/chrislusf/seaweedfs/weed/storage/types"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 )
 
 /*
@@ -99,7 +99,6 @@ func TestCompaction(t *testing.T) {
 
 		if infos[i-1] == nil {
 			t.Fatal("not found file", i)
-			continue
 		}
 
 		if infos[i-1].size == 0 {

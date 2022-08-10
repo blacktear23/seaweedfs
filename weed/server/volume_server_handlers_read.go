@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/storage/types"
-	"github.com/chrislusf/seaweedfs/weed/util/mem"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
+	"github.com/seaweedfs/seaweedfs/weed/util/mem"
 	"io"
 	"mime"
 	"net/http"
@@ -17,23 +17,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/images"
-	"github.com/chrislusf/seaweedfs/weed/operation"
-	"github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/storage"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/images"
+	"github.com/seaweedfs/seaweedfs/weed/operation"
+	"github.com/seaweedfs/seaweedfs/weed/storage"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 var fileNameEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 
 func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) {
-
-	stats.VolumeServerRequestCounter.WithLabelValues("get").Inc()
-	start := time.Now()
-	defer func() { stats.VolumeServerRequestHistogram.WithLabelValues("get").Observe(time.Since(start).Seconds()) }()
-
 	n := new(needle.Needle)
 	vid, fid, filename, ext, _ := parseURLPath(r.URL.Path)
 

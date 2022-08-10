@@ -10,12 +10,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/client_golang/prometheus/push"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
+
+// Readonly volume types
+const (
+	IsReadOnly       = "IsReadOnly"
+	NoWriteOrDelete  = "noWriteOrDelete"
+	NoWriteCanDelete = "noWriteCanDelete"
+	IsDiskSpaceLow   = "isDiskSpaceLow"
+)
+
+var readOnlyVolumeTypes = [4]string{IsReadOnly, NoWriteOrDelete, NoWriteCanDelete, IsDiskSpaceLow}
 
 var (
 	Gather = prometheus.NewRegistry()
@@ -248,4 +258,13 @@ func SourceName(port uint32) string {
 		return "unknown"
 	}
 	return net.JoinHostPort(hostname, strconv.Itoa(int(port)))
+}
+
+// todo - can be changed to DeletePartialMatch when https://github.com/prometheus/client_golang/pull/1013 gets released
+func DeleteCollectionMetrics(collection string) {
+	VolumeServerDiskSizeGauge.DeleteLabelValues(collection, "normal")
+	for _, volume_type := range readOnlyVolumeTypes {
+		VolumeServerReadOnlyVolumeGauge.DeleteLabelValues(collection, volume_type)
+	}
+	VolumeServerVolumeCounter.DeleteLabelValues(collection, "volume")
 }

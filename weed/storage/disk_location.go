@@ -5,17 +5,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/storage/erasure_coding"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/storage/types"
-	"github.com/chrislusf/seaweedfs/weed/util"
 	"github.com/google/uuid"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 type DiskLocation struct {
@@ -208,8 +209,18 @@ func (l *DiskLocation) concurrentLoadingVolumes(needleMapKind NeedleMapKind, con
 func (l *DiskLocation) loadExistingVolumes(needleMapKind NeedleMapKind) {
 
 	workerNum := runtime.NumCPU()
-	if workerNum <= 10 {
-		workerNum = 10
+	val, ok := os.LookupEnv("GOMAXPROCS")
+	if ok {
+		num, err := strconv.Atoi(val)
+		if err != nil || num < 1 {
+			num = 10
+			glog.Warningf("failed to set worker number from GOMAXPROCS , set to default:10")
+		}
+		workerNum = num
+	} else {
+		if workerNum <= 10 {
+			workerNum = 10
+		}
 	}
 	l.concurrentLoadingVolumes(needleMapKind, workerNum)
 	glog.V(0).Infof("Store started on dir: %s with %d volumes max %d", l.Directory, len(l.volumes), l.MaxVolumeCount)

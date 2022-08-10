@@ -8,11 +8,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/security"
-	"github.com/chrislusf/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/security"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
 )
 
 /*
@@ -36,6 +36,11 @@ func (vs *VolumeServer) privateStoreHandler(w http.ResponseWriter, r *http.Reque
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 	}
+	stats.VolumeServerRequestCounter.WithLabelValues(r.Method).Inc()
+	start := time.Now()
+	defer func() {
+		stats.VolumeServerRequestHistogram.WithLabelValues(r.Method).Observe(time.Since(start).Seconds())
+	}()
 	switch r.Method {
 	case "GET", "HEAD":
 		stats.ReadRequest()
@@ -56,7 +61,6 @@ func (vs *VolumeServer) privateStoreHandler(w http.ResponseWriter, r *http.Reque
 		stats.DeleteRequest()
 		vs.guard.WhiteList(vs.DeleteHandler)(w, r)
 	case "PUT", "POST":
-
 		contentLength := getContentLength(r)
 		// exclude the replication from the concurrentUploadLimitMB
 		if r.URL.Query().Get("type") != "replicate" && vs.concurrentUploadLimit != 0 {
