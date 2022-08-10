@@ -1,9 +1,11 @@
+//go:build linux
 // +build linux
 
 package backend
 
 import (
 	"os"
+	"syscall"
 
 	"github.com/iceber/iouring-go"
 )
@@ -21,6 +23,10 @@ type IOUringDriver struct {
 
 func init() {
 	supportIOUring = true
+}
+
+func (d *SyscallIODriver) Sync() error {
+	return syscall.Fdatasync(d.fd)
 }
 
 func NewIOUringDriver(file *os.File) (*IOUringDriver, error) {
@@ -72,7 +78,7 @@ func (d *IOUringDriver) Sync() error {
 	token := <-d.rateLimit
 	defer d.returnToken(token)
 	ch := make(chan iouring.Result, 1)
-	preq := iouring.Fsync(d.fd)
+	preq := iouring.Fdatasync(d.fd)
 	if _, err := d.iour.SubmitRequest(preq, ch); err != nil {
 		return err
 	}

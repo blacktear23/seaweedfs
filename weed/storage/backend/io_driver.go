@@ -38,11 +38,13 @@ func NewIODriver(f *os.File) IODriver {
 
 type SyscallIODriver struct {
 	File *os.File
+	fd   int
 }
 
 func NewSyscallIODriver(file *os.File) *SyscallIODriver {
 	return &SyscallIODriver{
 		File: file,
+		fd:   int(file.Fd()),
 	}
 }
 
@@ -52,10 +54,6 @@ func (d *SyscallIODriver) ReadAt(p []byte, off int64) (int, error) {
 
 func (d *SyscallIODriver) WriteAt(p []byte, off int64) (int, error) {
 	return d.File.WriteAt(p, off)
-}
-
-func (d *SyscallIODriver) Sync() error {
-	return d.File.Sync()
 }
 
 func (d *SyscallIODriver) Truncate(off int64) error {

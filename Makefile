@@ -2,6 +2,8 @@ BINARY = weed
 
 SOURCE_DIR = .
 
+.PHONY : test
+
 all: install
 
 install:
@@ -11,7 +13,7 @@ full_install:
 	cd weed; go install -tags "elastic gocdk sqlite ydb tikv"
 
 test:
-	cd weed; go test -tags "elastic gocdk sqlite ydb tikv" -v ./...
+	cd weed; go test -tags "elastic gocdk sqlite ydb tikv" ./...
 
 build: build-amd64 build-arm64
 

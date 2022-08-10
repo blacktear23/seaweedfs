@@ -1,4 +1,5 @@
-// +build !linux
+//go:build !linux && !darwin
+// +build !linux,!darwin
 
 package backend
 
@@ -13,4 +14,8 @@ var (
 
 func NewIOUringDriver(file *os.File) (IODriver, error) {
 	return nil, errUnsupportIODriver
+}
+
+func (d *SyscallIODriver) Sync() error {
+	return d.File.Sync()
 }
