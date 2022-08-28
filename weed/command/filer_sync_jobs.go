@@ -2,23 +2,22 @@ package command
 
 import (
 	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"sync"
 )
-
-type MetadataProcessFunc func(resp *filer_pb.SubscribeMetadataResponse) error
 
 type MetadataProcessor struct {
 	activeJobs           map[int64]*filer_pb.SubscribeMetadataResponse
 	activeJobsLock       sync.Mutex
 	activeJobsCond       *sync.Cond
 	concurrencyLimit     int
-	fn                   MetadataProcessFunc
+	fn                   pb.ProcessMetadataFunc
 	processedTsWatermark int64
 }
 
-func NewMetadataProcessor(fn MetadataProcessFunc, concurrency int) *MetadataProcessor {
+func NewMetadataProcessor(fn pb.ProcessMetadataFunc, concurrency int) *MetadataProcessor {
 	t := &MetadataProcessor{
 		fn:               fn,
 		activeJobs:       make(map[int64]*filer_pb.SubscribeMetadataResponse),
@@ -42,12 +41,11 @@ func (t *MetadataProcessor) AddSyncJob(resp *filer_pb.SubscribeMetadataResponse)
 	t.activeJobs[resp.TsNs] = resp
 	go func() {
 
-		util.RetryForever("metadata processor", func() error {
+		if err := util.Retry("metadata processor", func() error {
 			return t.fn(resp)
-		}, func(err error) bool {
+		}); err != nil {
 			glog.Errorf("process %v: %v", resp, err)
-			return true
-		})
+		}
 
 		t.activeJobsLock.Lock()
 		defer t.activeJobsLock.Unlock()

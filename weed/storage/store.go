@@ -65,12 +65,12 @@ func (s *Store) String() (str string) {
 	return
 }
 
-func NewStore(grpcDialOption grpc.DialOption, ip string, port int, grpcPort int, publicUrl string, dirnames []string, maxVolumeCounts []int,
+func NewStore(grpcDialOption grpc.DialOption, ip string, port int, grpcPort int, publicUrl string, dirnames []string, maxVolumeCounts []int32,
 	minFreeSpaces []util.MinFreeSpace, idxFolder string, needleMapKind NeedleMapKind, diskTypes []DiskType) (s *Store) {
 	s = &Store{grpcDialOption: grpcDialOption, Port: port, Ip: ip, GrpcPort: grpcPort, PublicUrl: publicUrl, NeedleMapKind: needleMapKind}
 	s.Locations = make([]*DiskLocation, 0)
 	for i := 0; i < len(dirnames); i++ {
-		location := NewDiskLocation(dirnames[i], maxVolumeCounts[i], minFreeSpaces[i], idxFolder, diskTypes[i])
+		location := NewDiskLocation(dirnames[i], int32(maxVolumeCounts[i]), minFreeSpaces[i], idxFolder, diskTypes[i])
 		location.loadExistingVolumes(needleMapKind)
 		s.Locations = append(s.Locations, location)
 		stats.VolumeServerMaxVolumeCounter.Add(float64(maxVolumeCounts[i]))
@@ -116,7 +116,7 @@ func (s *Store) findVolume(vid needle.VolumeId) *Volume {
 	return nil
 }
 func (s *Store) FindFreeLocation(diskType DiskType) (ret *DiskLocation) {
-	max := 0
+	max := int32(0)
 	for _, location := range s.Locations {
 		if diskType != location.DiskType {
 			continue
@@ -124,9 +124,9 @@ func (s *Store) FindFreeLocation(diskType DiskType) (ret *DiskLocation) {
 		if location.isDiskSpaceLow {
 			continue
 		}
-		currentFreeCount := location.MaxVolumeCount - location.VolumesLen()
+		currentFreeCount := location.MaxVolumeCount - int32(location.VolumesLen())
 		currentFreeCount *= erasure_coding.DataShardsCount
-		currentFreeCount -= location.EcVolumesLen()
+		currentFreeCount -= int32(location.EcVolumesLen())
 		currentFreeCount /= erasure_coding.DataShardsCount
 		if currentFreeCount > max {
 			max = currentFreeCount
@@ -227,7 +227,7 @@ func (s *Store) CollectHeartbeat() *master_pb.Heartbeat {
 	var volumeMessages []*master_pb.VolumeInformationMessage
 	maxVolumeCounts := make(map[string]uint32)
 	var maxFileKey NeedleId
-	collectionVolumeSize := make(map[string]uint64)
+	collectionVolumeSize := make(map[string]int64)
 	collectionVolumeReadOnlyCount := make(map[string]map[string]uint8)
 	for _, location := range s.Locations {
 		var deleteVids []needle.VolumeId
@@ -262,11 +262,11 @@ func (s *Store) CollectHeartbeat() *master_pb.Heartbeat {
 				collectionVolumeSize[v.Collection] = 0
 			}
 			if !shouldDeleteVolume {
-				collectionVolumeSize[v.Collection] += volumeMessage.Size
+				collectionVolumeSize[v.Collection] += int64(volumeMessage.Size)
 			} else {
-				collectionVolumeSize[v.Collection] -= volumeMessage.Size
-				if collectionVolumeSize[v.Collection] < 0 {
-					collectionVolumeSize[v.Collection] = 0
+				collectionVolumeSize[v.Collection] -= int64(volumeMessage.Size)
+				if collectionVolumeSize[v.Collection] <= 0 {
+					delete(collectionVolumeSize, v.Collection)
 				}
 			}
 
@@ -511,12 +511,12 @@ func (s *Store) ConfigureVolume(i needle.VolumeId, replication string) error {
 		vifFile := filepath.Join(location.Directory, baseFileName+".vif")
 		volumeInfo, _, _, err := volume_info.MaybeLoadVolumeInfo(vifFile)
 		if err != nil {
-			return fmt.Errorf("volume %d fail to load vif", i)
+			return fmt.Errorf("volume %d fail to load vif: %v", i, err)
 		}
 		volumeInfo.Replication = replication
 		err = volume_info.SaveVolumeInfo(vifFile, volumeInfo)
 		if err != nil {
-			return fmt.Errorf("volume %d fail to save vif", i)
+			return fmt.Errorf("volume %d fail to save vif: %v", i, err)
 		}
 		return nil
 	}
@@ -539,19 +539,19 @@ func (s *Store) MaybeAdjustVolumeMax() (hasChanges bool) {
 	}
 	for _, diskLocation := range s.Locations {
 		if diskLocation.OriginalMaxVolumeCount == 0 {
-			currentMaxVolumeCount := diskLocation.MaxVolumeCount
+			currentMaxVolumeCount := atomic.LoadInt32(&diskLocation.MaxVolumeCount)
 			diskStatus := stats.NewDiskStatus(diskLocation.Directory)
 			unusedSpace := diskLocation.UnUsedSpace(volumeSizeLimit)
 			unclaimedSpaces := int64(diskStatus.Free) - int64(unusedSpace)
 			volCount := diskLocation.VolumesLen()
-			maxVolumeCount := volCount
+			maxVolumeCount := int32(volCount)
 			if unclaimedSpaces > int64(volumeSizeLimit) {
-				maxVolumeCount += int(uint64(unclaimedSpaces)/volumeSizeLimit) - 1
+				maxVolumeCount += int32(uint64(unclaimedSpaces)/volumeSizeLimit) - 1
 			}
-			diskLocation.MaxVolumeCount = maxVolumeCount
+			atomic.StoreInt32(&diskLocation.MaxVolumeCount, maxVolumeCount)
 			glog.V(2).Infof("disk %s max %d unclaimedSpace:%dMB, unused:%dMB volumeSizeLimit:%dMB",
 				diskLocation.Directory, maxVolumeCount, unclaimedSpaces/1024/1024, unusedSpace/1024/1024, volumeSizeLimit/1024/1024)
-			hasChanges = hasChanges || currentMaxVolumeCount != diskLocation.MaxVolumeCount
+			hasChanges = hasChanges || currentMaxVolumeCount != atomic.LoadInt32(&diskLocation.MaxVolumeCount)
 		}
 	}
 	return

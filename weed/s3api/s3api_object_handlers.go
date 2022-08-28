@@ -93,13 +93,15 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 	defer dataReader.Close()
 
 	objectContentType := r.Header.Get("Content-Type")
-	if strings.HasSuffix(object, "/") {
-		if err := s3a.mkdir(s3a.option.BucketsPath, bucket+strings.TrimSuffix(object, "/"), func(entry *filer_pb.Entry) {
-			if objectContentType == "" {
-				objectContentType = "httpd/unix-directory"
-			}
-			entry.Attributes.Mime = objectContentType
-		}); err != nil {
+	if strings.HasSuffix(object, "/") && r.ContentLength == 0 {
+		if err := s3a.mkdir(
+			s3a.option.BucketsPath, bucket+strings.TrimSuffix(object, "/"),
+			func(entry *filer_pb.Entry) {
+				if objectContentType == "" {
+					objectContentType = "httpd/unix-directory"
+				}
+				entry.Attributes.Mime = objectContentType
+			}); err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 			return
 		}
@@ -130,9 +132,30 @@ func urlPathEscape(object string) string {
 	return strings.Join(escapedParts, "/")
 }
 
+func removeDuplicateSlashes(object string) string {
+	result := strings.Builder{}
+	result.Grow(len(object))
+
+	isLastSlash := false
+	for _, r := range object {
+		switch r {
+		case '/':
+			if !isLastSlash {
+				result.WriteRune(r)
+			}
+			isLastSlash = true
+		default:
+			result.WriteRune(r)
+			isLastSlash = false
+		}
+	}
+	return result.String()
+}
+
 func (s3a *S3ApiServer) toFilerUrl(bucket, object string) string {
+	object = urlPathEscape(removeDuplicateSlashes(object))
 	destUrl := fmt.Sprintf("http://%s%s/%s%s",
-		s3a.option.Filer.ToHttpAddress(), s3a.option.BucketsPath, bucket, urlPathEscape(object))
+		s3a.option.Filer.ToHttpAddress(), s3a.option.BucketsPath, bucket, object)
 	return destUrl
 }
 
@@ -293,7 +316,7 @@ func (s3a *S3ApiServer) DeleteMultipleObjectsHandler(w http.ResponseWriter, r *h
 
 func (s3a *S3ApiServer) doDeleteEmptyDirectories(client filer_pb.SeaweedFilerClient, directoriesWithDeletion map[string]int) (newDirectoriesWithDeletion map[string]int) {
 	var allDirs []string
-	for dir, _ := range directoriesWithDeletion {
+	for dir := range directoriesWithDeletion {
 		allDirs = append(allDirs, dir)
 	}
 	slices.SortFunc(allDirs, func(a, b string) bool {
@@ -358,11 +381,31 @@ func (s3a *S3ApiServer) proxyToFiler(w http.ResponseWriter, r *http.Request, des
 		return
 	}
 
-	if (resp.ContentLength == -1 || resp.StatusCode == 404) && resp.StatusCode != 304 {
-		if r.Method != "DELETE" {
-			s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+	if r.Method == "DELETE" {
+		if resp.StatusCode == http.StatusNotFound {
+			// this is normal
+			responseStatusCode := responseFn(resp, w)
+			s3err.PostLog(r, responseStatusCode, s3err.ErrNone)
 			return
 		}
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+		return
+	}
+
+	if resp.Header.Get(s3_constants.X_SeaweedFS_Header_Directory_Key) == "true" {
+		responseStatusCode := responseFn(resp, w)
+		s3err.PostLog(r, responseStatusCode, s3err.ErrNone)
+		return
+	}
+
+	// when HEAD a directory, it should be reported as no such key
+	// https://github.com/seaweedfs/seaweedfs/issues/3457
+	if resp.ContentLength == -1 && resp.StatusCode != http.StatusNotModified {
+		s3err.WriteErrorResponse(w, r, s3err.ErrNoSuchKey)
+		return
 	}
 
 	responseStatusCode := responseFn(resp, w)

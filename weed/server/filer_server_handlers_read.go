@@ -25,10 +25,11 @@ import (
 
 // Validates the preconditions. Returns true if GET/HEAD operation should not proceed.
 // Preconditions supported are:
-//  If-Modified-Since
-//  If-Unmodified-Since
-//  If-Match
-//  If-None-Match
+//
+//	If-Modified-Since
+//	If-Unmodified-Since
+//	If-Match
+//	If-None-Match
 func checkPreconditions(w http.ResponseWriter, r *http.Request, entry *filer.Entry) bool {
 
 	etag := filer.ETagEntry(entry)
@@ -70,7 +71,7 @@ func checkPreconditions(w http.ResponseWriter, r *http.Request, entry *filer.Ent
 		}
 	} else if ifModifiedSinceHeader != "" {
 		if t, parseError := time.Parse(http.TimeFormat, ifModifiedSinceHeader); parseError == nil {
-			if t.After(entry.Attr.Mtime) {
+			if !t.Before(entry.Attr.Mtime) {
 				w.WriteHeader(http.StatusNotModified)
 				return true
 			}
@@ -111,8 +112,12 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		fs.listDirectoryHandler(w, r)
-		return
+		if entry.Attr.Mime == "" {
+			fs.listDirectoryHandler(w, r)
+			return
+		}
+		// inform S3 API this is a user created directory key object
+		w.Header().Set(s3_constants.X_SeaweedFS_Header_Directory_Key, "true")
 	}
 
 	if isForDirectory {
