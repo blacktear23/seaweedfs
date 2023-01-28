@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func init() {
@@ -93,7 +93,7 @@ func (c *commandFsLs) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 				dir = dir[:len(dir)-1]
 			}
 			fmt.Fprintf(writer, "%s %3d %s %s %6d %s/%s\n",
-				fileMode, len(entry.Chunks),
+				fileMode, len(entry.GetChunks()),
 				userName, groupName,
 				filer.FileSize(entry), dir, entry.Name)
 		} else {

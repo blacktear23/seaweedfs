@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/operation"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/master_pb"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/operation"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func (fs *FilerServer) LookupDirectoryEntry(ctx context.Context, req *filer_pb.LookupDirectoryEntryRequest) (*filer_pb.LookupDirectoryEntryResponse, error) {
@@ -105,9 +105,10 @@ func (fs *FilerServer) LookupVolume(ctx context.Context, req *filer_pb.LookupVol
 		}
 		for _, loc := range locations {
 			locs = append(locs, &filer_pb.Location{
-				Url:       loc.Url,
-				PublicUrl: loc.PublicUrl,
-				GrpcPort:  uint32(loc.GrpcPort),
+				Url:        loc.Url,
+				PublicUrl:  loc.PublicUrl,
+				GrpcPort:   uint32(loc.GrpcPort),
+				DataCenter: loc.DataCenter,
 			})
 		}
 		resp.LocationsMap[vidString] = &filer_pb.Locations{
@@ -202,14 +203,14 @@ func (fs *FilerServer) cleanupChunks(fullpath string, existingEntry *filer.Entry
 
 	// remove old chunks if not included in the new ones
 	if existingEntry != nil {
-		garbage, err = filer.MinusChunks(fs.lookupFileId, existingEntry.Chunks, newEntry.Chunks)
+		garbage, err = filer.MinusChunks(fs.lookupFileId, existingEntry.GetChunks(), newEntry.GetChunks())
 		if err != nil {
-			return newEntry.Chunks, nil, fmt.Errorf("MinusChunks: %v", err)
+			return newEntry.GetChunks(), nil, fmt.Errorf("MinusChunks: %v", err)
 		}
 	}
 
 	// files with manifest chunks are usually large and append only, skip calculating covered chunks
-	manifestChunks, nonManifestChunks := filer.SeparateManifestChunks(newEntry.Chunks)
+	manifestChunks, nonManifestChunks := filer.SeparateManifestChunks(newEntry.GetChunks())
 
 	chunks, coveredChunks := filer.CompactFileChunks(fs.lookupFileId, nonManifestChunks)
 	garbage = append(garbage, coveredChunks...)
@@ -255,7 +256,7 @@ func (fs *FilerServer) AppendToEntry(ctx context.Context, req *filer_pb.AppendTo
 			},
 		}
 	} else {
-		offset = int64(filer.TotalSize(entry.Chunks))
+		offset = int64(filer.TotalSize(entry.GetChunks()))
 	}
 
 	for _, chunk := range req.Chunks {
@@ -263,13 +264,13 @@ func (fs *FilerServer) AppendToEntry(ctx context.Context, req *filer_pb.AppendTo
 		offset += int64(chunk.Size)
 	}
 
-	entry.Chunks = append(entry.Chunks, req.Chunks...)
+	entry.Chunks = append(entry.GetChunks(), req.Chunks...)
 	so, err := fs.detectStorageOption(string(fullpath), "", "", entry.TtlSec, "", "", "", "")
 	if err != nil {
 		glog.Warningf("detectStorageOption: %v", err)
 		return &filer_pb.AppendToEntryResponse{}, err
 	}
-	entry.Chunks, err = filer.MaybeManifestize(fs.saveAsChunk(so), entry.Chunks)
+	entry.Chunks, err = filer.MaybeManifestize(fs.saveAsChunk(so), entry.GetChunks())
 	if err != nil {
 		// not good, but should be ok
 		glog.V(0).Infof("MaybeManifestize: %v", err)

@@ -11,15 +11,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
-
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/operation"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	//"github.com/seaweedfs/seaweedfs/weed/s3api"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/operation"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func (fs *FilerServer) autoChunk(ctx context.Context, w http.ResponseWriter, r *http.Request, contentLength int64, so *operation.StorageOption) {
@@ -35,12 +35,6 @@ func (fs *FilerServer) autoChunk(ctx context.Context, w http.ResponseWriter, r *
 
 	chunkSize := 1024 * 1024 * maxMB
 
-	stats.FilerRequestCounter.WithLabelValues("chunk").Inc()
-	start := time.Now()
-	defer func() {
-		stats.FilerRequestHistogram.WithLabelValues("chunk").Observe(time.Since(start).Seconds())
-	}()
-
 	var reply *FilerPostResult
 	var err error
 	var md5bytes []byte
@@ -54,7 +48,7 @@ func (fs *FilerServer) autoChunk(ctx context.Context, w http.ResponseWriter, r *
 		reply, md5bytes, err = fs.doPutAutoChunk(ctx, w, r, chunkSize, contentLength, so)
 	}
 	if err != nil {
-		if strings.HasPrefix(err.Error(), "read input:") {
+		if strings.HasPrefix(err.Error(), "read input:") || err.Error() == io.ErrUnexpectedEOF.Error() {
 			writeJsonError(w, r, 499, err)
 		} else if strings.HasSuffix(err.Error(), "is a file") {
 			writeJsonError(w, r, http.StatusConflict, err)
@@ -238,7 +232,7 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 			}
 			entry.FileSize += uint64(chunkOffset)
 		}
-		newChunks = append(entry.Chunks, fileChunks...)
+		newChunks = append(entry.GetChunks(), fileChunks...)
 
 		// TODO
 		if len(entry.Content) > 0 {
@@ -313,29 +307,41 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 
 func (fs *FilerServer) saveAsChunk(so *operation.StorageOption) filer.SaveDataAsChunkFunctionType {
 
-	return func(reader io.Reader, name string, offset int64) (*filer_pb.FileChunk, string, string, error) {
-		// assign one file id for one chunk
-		fileId, urlLocation, auth, assignErr := fs.assignNewFileInfo(so)
-		if assignErr != nil {
-			return nil, "", "", assignErr
+	return func(reader io.Reader, name string, offset int64, tsNs int64) (*filer_pb.FileChunk, error) {
+		var fileId string
+		var uploadResult *operation.UploadResult
+
+		err := util.Retry("saveAsChunk", func() error {
+			// assign one file id for one chunk
+			assignedFileId, urlLocation, auth, assignErr := fs.assignNewFileInfo(so)
+			if assignErr != nil {
+				return assignErr
+			}
+
+			fileId = assignedFileId
+
+			// upload the chunk to the volume server
+			uploadOption := &operation.UploadOption{
+				UploadUrl:         urlLocation,
+				Filename:          name,
+				Cipher:            fs.option.Cipher,
+				IsInputCompressed: false,
+				MimeType:          "",
+				PairMap:           nil,
+				Jwt:               auth,
+			}
+			var uploadErr error
+			uploadResult, uploadErr, _ = operation.Upload(reader, uploadOption)
+			if uploadErr != nil {
+				return uploadErr
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
 
-		// upload the chunk to the volume server
-		uploadOption := &operation.UploadOption{
-			UploadUrl:         urlLocation,
-			Filename:          name,
-			Cipher:            fs.option.Cipher,
-			IsInputCompressed: false,
-			MimeType:          "",
-			PairMap:           nil,
-			Jwt:               auth,
-		}
-		uploadResult, uploadErr, _ := operation.Upload(reader, uploadOption)
-		if uploadErr != nil {
-			return nil, "", "", uploadErr
-		}
-
-		return uploadResult.ToPbFileChunk(fileId, offset), so.Collection, so.Replication, nil
+		return uploadResult.ToPbFileChunk(fileId, offset, tsNs), nil
 	}
 }
 
@@ -401,6 +407,10 @@ func SaveAmzMetaData(r *http.Request, existing map[string][]byte, isReplace bool
 		metadata[s3_constants.AmzStorageClass] = []byte(sc)
 	}
 
+	if ce := r.Header.Get("Content-Encoding"); ce != "" {
+		metadata["Content-Encoding"] = []byte(ce)
+	}
+
 	if tags := r.Header.Get(s3_constants.AmzObjectTagging); tags != "" {
 		for _, v := range strings.Split(tags, "&") {
 			tag := strings.Split(v, "=")
@@ -418,6 +428,18 @@ func SaveAmzMetaData(r *http.Request, existing map[string][]byte, isReplace bool
 				metadata[header] = []byte(value)
 			}
 		}
+	}
+
+	//acp-owner
+	acpOwner := r.Header.Get(s3_constants.ExtAmzOwnerKey)
+	if len(acpOwner) > 0 {
+		metadata[s3_constants.ExtAmzOwnerKey] = []byte(acpOwner)
+	}
+
+	//acp-grants
+	acpGrants := r.Header.Get(s3_constants.ExtAmzAclKey)
+	if len(acpOwner) > 0 {
+		metadata[s3_constants.ExtAmzAclKey] = []byte(acpGrants)
 	}
 
 	return

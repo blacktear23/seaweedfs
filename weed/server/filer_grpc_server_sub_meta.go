@@ -2,17 +2,17 @@ package weed_server
 
 import (
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"strings"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/util"
-	"github.com/chrislusf/seaweedfs/weed/util/log_buffer"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
 )
 
 const (
@@ -24,11 +24,11 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 
 	peerAddress := findClientAddress(stream.Context(), 0)
 
-	alreadyKnown, clientName := fs.addClient(req.ClientName, peerAddress, req.ClientId)
+	alreadyKnown, clientName := fs.addClient(req.ClientName, peerAddress, req.ClientId, req.ClientEpoch)
 	if alreadyKnown {
 		return fmt.Errorf("duplicated subscription detected for client %s id %d", clientName, req.ClientId)
 	}
-	defer fs.deleteClient(clientName, req.ClientId)
+	defer fs.deleteClient(clientName, req.ClientId, req.ClientEpoch)
 
 	lastReadTime := time.Unix(0, req.SinceNs)
 	glog.V(0).Infof(" %v starts to subscribe %s from %+v", clientName, req.PathPrefix, lastReadTime)
@@ -90,14 +90,20 @@ func (fs *FilerServer) SubscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 
 	peerAddress := findClientAddress(stream.Context(), 0)
 
-	alreadyKnown, clientName := fs.addClient(req.ClientName, peerAddress, req.ClientId)
+	// use negative client id to differentiate from addClient()/deleteClient() used in SubscribeMetadata()
+	req.ClientId = -req.ClientId
+
+	alreadyKnown, clientName := fs.addClient(req.ClientName, peerAddress, req.ClientId, req.ClientEpoch)
 	if alreadyKnown {
-		return fmt.Errorf("duplicated local subscription detected for client %s id %d", clientName, req.ClientId)
+		return fmt.Errorf("duplicated local subscription detected for client %s clientId:%d", clientName, req.ClientId)
 	}
-	defer fs.deleteClient(clientName, req.ClientId)
+	defer func() {
+		glog.V(0).Infof(" - %v local subscribe %s clientId:%d", clientName, req.PathPrefix, req.ClientId)
+		fs.deleteClient(clientName, req.ClientId, req.ClientEpoch)
+	}()
 
 	lastReadTime := time.Unix(0, req.SinceNs)
-	glog.V(0).Infof(" %v local subscribe %s from %+v", clientName, req.PathPrefix, lastReadTime)
+	glog.V(0).Infof(" + %v local subscribe %s from %+v clientId:%d", clientName, req.PathPrefix, lastReadTime, req.ClientId)
 
 	eachEventNotificationFn := fs.eachEventNotificationFn(req, stream, clientName)
 
@@ -217,6 +223,8 @@ func (fs *FilerServer) eachEventNotificationFn(req *filer_pb.SubscribeMetadataRe
 
 		if hasPrefixIn(fullpath, req.PathPrefixes) {
 			// good
+		} else if matchByDirectory(dirPath, req.Directories) {
+			// good
 		} else {
 			if !strings.HasPrefix(fullpath, req.PathPrefix) {
 				if eventNotification.NewParentPath != "" {
@@ -257,22 +265,39 @@ func hasPrefixIn(text string, prefixes []string) bool {
 	return false
 }
 
-func (fs *FilerServer) addClient(clientType string, clientAddress string, clientId int32) (alreadyKnown bool, clientName string) {
+func matchByDirectory(dirPath string, directories []string) bool {
+	for _, dir := range directories {
+		if dirPath == dir {
+			return true
+		}
+	}
+	return false
+}
+
+func (fs *FilerServer) addClient(clientType string, clientAddress string, clientId int32, clientEpoch int32) (alreadyKnown bool, clientName string) {
 	clientName = clientType + "@" + clientAddress
 	glog.V(0).Infof("+ listener %v", clientName)
 	if clientId != 0 {
 		fs.knownListenersLock.Lock()
-		_, alreadyKnown = fs.knownListeners[clientId]
-		fs.knownListenersLock.Unlock()
+		defer fs.knownListenersLock.Unlock()
+		epoch, found := fs.knownListeners[clientId]
+		if !found || epoch < clientEpoch {
+			fs.knownListeners[clientId] = clientEpoch
+		} else {
+			alreadyKnown = true
+		}
 	}
 	return
 }
 
-func (fs *FilerServer) deleteClient(clientName string, clientId int32) {
+func (fs *FilerServer) deleteClient(clientName string, clientId int32, clientEpoch int32) {
 	glog.V(0).Infof("- listener %v", clientName)
 	if clientId != 0 {
 		fs.knownListenersLock.Lock()
-		delete(fs.knownListeners, clientId)
-		fs.knownListenersLock.Unlock()
+		defer fs.knownListenersLock.Unlock()
+		epoch, found := fs.knownListeners[clientId]
+		if found && epoch <= clientEpoch {
+			delete(fs.knownListeners, clientId)
+		}
 	}
 }

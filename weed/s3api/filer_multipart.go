@@ -4,7 +4,8 @@ import (
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	"github.com/google/uuid"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"golang.org/x/exp/slices"
 	"math"
 	"path/filepath"
@@ -16,9 +17,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
 
 type InitiateMultipartUploadResult struct {
@@ -31,6 +32,8 @@ func (s3a *S3ApiServer) createMultipartUpload(input *s3.CreateMultipartUploadInp
 	glog.V(2).Infof("createMultipartUpload input %v", input)
 
 	uploadIdString := s3a.generateUploadID(*input.Key)
+
+	uploadIdString = uploadIdString + "_" + strings.ReplaceAll(uuid.New().String(), "-", "")
 
 	if err := s3a.mkdir(s3a.genUploadsFolder(*input.Bucket), uploadIdString, func(entry *filer_pb.Entry) {
 		if entry.Extended == nil {
@@ -103,14 +106,14 @@ func (s3a *S3ApiServer) completeMultipartUpload(input *s3.CompleteMultipartUploa
 				glog.Errorf("completeMultipartUpload %s ETag mismatch chunk: %s part: %s", entry.Name, entryETag, partETag)
 				return nil, s3err.ErrInvalidPart
 			}
-			for _, chunk := range entry.Chunks {
+			for _, chunk := range entry.GetChunks() {
 				p := &filer_pb.FileChunk{
-					FileId:    chunk.GetFileIdString(),
-					Offset:    offset,
-					Size:      chunk.Size,
-					Mtime:     chunk.Mtime,
-					CipherKey: chunk.CipherKey,
-					ETag:      chunk.ETag,
+					FileId:       chunk.GetFileIdString(),
+					Offset:       offset,
+					Size:         chunk.Size,
+					ModifiedTsNs: chunk.ModifiedTsNs,
+					CipherKey:    chunk.CipherKey,
+					ETag:         chunk.ETag,
 				}
 				finalParts = append(finalParts, p)
 				offset += int64(chunk.Size)
@@ -147,6 +150,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(input *s3.CompleteMultipartUploa
 		} else if mime != "" {
 			entry.Attributes.Mime = mime
 		}
+		entry.Attributes.FileSize = uint64(offset)
 	})
 
 	if err != nil {
@@ -156,7 +160,7 @@ func (s3a *S3ApiServer) completeMultipartUpload(input *s3.CompleteMultipartUploa
 
 	output = &CompleteMultipartUploadResult{
 		CompleteMultipartUploadOutput: s3.CompleteMultipartUploadOutput{
-			Location: aws.String(fmt.Sprintf("http://%s%s/%s", s3a.option.Filer.ToHttpAddress(), urlPathEscape(dirName), urlPathEscape(entryName))),
+			Location: aws.String(fmt.Sprintf("http://%s%s/%s", s3a.option.Filer.ToHttpAddress(), urlEscapeObject(dirName), urlPathEscape(entryName))),
 			Bucket:   input.Bucket,
 			ETag:     aws.String("\"" + filer.ETagChunks(finalParts) + "\""),
 			Key:      objectKey(input.Key),
@@ -244,6 +248,7 @@ func (s3a *S3ApiServer) listMultipartUploads(input *s3.ListMultipartUploadsInput
 		KeyMarker:    input.KeyMarker,
 		MaxUploads:   input.MaxUploads,
 		Prefix:       input.Prefix,
+		IsTruncated:  aws.Bool(false),
 	}
 
 	entries, _, err := s3a.list(s3a.genUploadsFolder(*input.Bucket), "", *input.UploadIdMarker, false, math.MaxInt32)

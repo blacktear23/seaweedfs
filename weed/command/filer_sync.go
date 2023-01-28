@@ -4,17 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/replication"
-	"github.com/chrislusf/seaweedfs/weed/replication/sink"
-	"github.com/chrislusf/seaweedfs/weed/replication/sink/filersink"
-	"github.com/chrislusf/seaweedfs/weed/replication/source"
-	"github.com/chrislusf/seaweedfs/weed/security"
-	statsCollect "github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/util"
-	"github.com/chrislusf/seaweedfs/weed/util/grace"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/replication"
+	"github.com/seaweedfs/seaweedfs/weed/replication/sink"
+	"github.com/seaweedfs/seaweedfs/weed/replication/sink/filersink"
+	"github.com/seaweedfs/seaweedfs/weed/replication/source"
+	"github.com/seaweedfs/seaweedfs/weed/security"
+	statsCollect "github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/util/grace"
 	"google.golang.org/grpc"
 	"os"
 	"strings"
@@ -26,7 +26,9 @@ type SyncOptions struct {
 	filerA          *string
 	filerB          *string
 	aPath           *string
+	aExcludePaths   *string
 	bPath           *string
+	bExcludePaths   *string
 	aReplication    *string
 	bReplication    *string
 	aCollection     *string
@@ -41,9 +43,17 @@ type SyncOptions struct {
 	bFromTsMs       *int64
 	aProxyByFiler   *bool
 	bProxyByFiler   *bool
+	metricsHttpIp   *string
 	metricsHttpPort *int
+	concurrency     *int
 	clientId        int32
+	clientEpoch     int32
 }
+
+const (
+	SyncKeyPrefix           = "sync."
+	DefaultConcurrencyLimit = 32
+)
 
 var (
 	syncOptions    SyncOptions
@@ -57,7 +67,9 @@ func init() {
 	syncOptions.filerA = cmdFilerSynchronize.Flag.String("a", "", "filer A in one SeaweedFS cluster")
 	syncOptions.filerB = cmdFilerSynchronize.Flag.String("b", "", "filer B in the other SeaweedFS cluster")
 	syncOptions.aPath = cmdFilerSynchronize.Flag.String("a.path", "/", "directory to sync on filer A")
+	syncOptions.aExcludePaths = cmdFilerSynchronize.Flag.String("a.excludePaths", "", "exclude directories to sync on filer A")
 	syncOptions.bPath = cmdFilerSynchronize.Flag.String("b.path", "/", "directory to sync on filer B")
+	syncOptions.bExcludePaths = cmdFilerSynchronize.Flag.String("b.excludePaths", "", "exclude directories to sync on filer B")
 	syncOptions.aReplication = cmdFilerSynchronize.Flag.String("a.replication", "", "replication on filer A")
 	syncOptions.bReplication = cmdFilerSynchronize.Flag.String("b.replication", "", "replication on filer B")
 	syncOptions.aCollection = cmdFilerSynchronize.Flag.String("a.collection", "", "collection on filer A")
@@ -72,8 +84,10 @@ func init() {
 	syncOptions.bDebug = cmdFilerSynchronize.Flag.Bool("b.debug", false, "debug mode to print out filer B received files")
 	syncOptions.aFromTsMs = cmdFilerSynchronize.Flag.Int64("a.fromTsMs", 0, "synchronization from timestamp on filer A. The unit is millisecond")
 	syncOptions.bFromTsMs = cmdFilerSynchronize.Flag.Int64("b.fromTsMs", 0, "synchronization from timestamp on filer B. The unit is millisecond")
+	syncOptions.concurrency = cmdFilerSynchronize.Flag.Int("concurrency", DefaultConcurrencyLimit, "The maximum number of files that will be synced concurrently.")
 	syncCpuProfile = cmdFilerSynchronize.Flag.String("cpuprofile", "", "cpu profile output file")
 	syncMemProfile = cmdFilerSynchronize.Flag.String("memprofile", "", "memory profile output file")
+	syncOptions.metricsHttpIp = cmdFilerSynchronize.Flag.String("metricsIp", "", "metrics listen ip")
 	syncOptions.metricsHttpPort = cmdFilerSynchronize.Flag.Int("metricsPort", 0, "metrics listen port")
 	syncOptions.clientId = util.RandomInt32()
 }
@@ -107,7 +121,7 @@ func runFilerSynchronize(cmd *Command, args []string) bool {
 	filerB := pb.ServerAddress(*syncOptions.filerB)
 
 	// start filer.sync metrics server
-	go statsCollect.StartMetricsServer(*syncOptions.metricsHttpPort)
+	go statsCollect.StartMetricsServer(*syncOptions.metricsHttpIp, *syncOptions.metricsHttpPort)
 
 	// read a filer signature
 	aFilerSignature, aFilerErr := replication.ReadFilerSignature(grpcDialOption, filerA)
@@ -125,15 +139,32 @@ func runFilerSynchronize(cmd *Command, args []string) bool {
 	go func() {
 		// a->b
 		// set synchronization start timestamp to offset
-		initOffsetError := initOffsetFromTsMs(grpcDialOption, filerB, aFilerSignature, *syncOptions.bFromTsMs)
+		initOffsetError := initOffsetFromTsMs(grpcDialOption, filerB, aFilerSignature, *syncOptions.bFromTsMs, getSignaturePrefixByPath(*syncOptions.aPath))
 		if initOffsetError != nil {
 			glog.Errorf("init offset from timestamp %d error from %s to %s: %v", *syncOptions.bFromTsMs, *syncOptions.filerA, *syncOptions.filerB, initOffsetError)
 			os.Exit(2)
 		}
 		for {
-			err := doSubscribeFilerMetaChanges(syncOptions.clientId, grpcDialOption, filerA, *syncOptions.aPath, *syncOptions.aProxyByFiler, filerB,
-				*syncOptions.bPath, *syncOptions.bReplication, *syncOptions.bCollection, *syncOptions.bTtlSec, *syncOptions.bProxyByFiler, *syncOptions.bDiskType,
-				*syncOptions.bDebug, aFilerSignature, bFilerSignature)
+			syncOptions.clientEpoch++
+			err := doSubscribeFilerMetaChanges(
+				syncOptions.clientId,
+				syncOptions.clientEpoch,
+				grpcDialOption,
+				filerA,
+				*syncOptions.aPath,
+				util.StringSplit(*syncOptions.aExcludePaths, ","),
+				*syncOptions.aProxyByFiler,
+				filerB,
+				*syncOptions.bPath,
+				*syncOptions.bReplication,
+				*syncOptions.bCollection,
+				*syncOptions.bTtlSec,
+				*syncOptions.bProxyByFiler,
+				*syncOptions.bDiskType,
+				*syncOptions.bDebug,
+				*syncOptions.concurrency,
+				aFilerSignature,
+				bFilerSignature)
 			if err != nil {
 				glog.Errorf("sync from %s to %s: %v", *syncOptions.filerA, *syncOptions.filerB, err)
 				time.Sleep(1747 * time.Millisecond)
@@ -144,16 +175,33 @@ func runFilerSynchronize(cmd *Command, args []string) bool {
 	if !*syncOptions.isActivePassive {
 		// b->a
 		// set synchronization start timestamp to offset
-		initOffsetError := initOffsetFromTsMs(grpcDialOption, filerA, bFilerSignature, *syncOptions.aFromTsMs)
+		initOffsetError := initOffsetFromTsMs(grpcDialOption, filerA, bFilerSignature, *syncOptions.aFromTsMs, getSignaturePrefixByPath(*syncOptions.bPath))
 		if initOffsetError != nil {
 			glog.Errorf("init offset from timestamp %d error from %s to %s: %v", *syncOptions.aFromTsMs, *syncOptions.filerB, *syncOptions.filerA, initOffsetError)
 			os.Exit(2)
 		}
 		go func() {
 			for {
-				err := doSubscribeFilerMetaChanges(syncOptions.clientId, grpcDialOption, filerB, *syncOptions.bPath, *syncOptions.bProxyByFiler, filerA,
-					*syncOptions.aPath, *syncOptions.aReplication, *syncOptions.aCollection, *syncOptions.aTtlSec, *syncOptions.aProxyByFiler, *syncOptions.aDiskType,
-					*syncOptions.aDebug, bFilerSignature, aFilerSignature)
+				syncOptions.clientEpoch++
+				err := doSubscribeFilerMetaChanges(
+					syncOptions.clientId,
+					syncOptions.clientEpoch,
+					grpcDialOption,
+					filerB,
+					*syncOptions.bPath,
+					util.StringSplit(*syncOptions.bExcludePaths, ","),
+					*syncOptions.bProxyByFiler,
+					filerA,
+					*syncOptions.aPath,
+					*syncOptions.aReplication,
+					*syncOptions.aCollection,
+					*syncOptions.aTtlSec,
+					*syncOptions.aProxyByFiler,
+					*syncOptions.aDiskType,
+					*syncOptions.aDebug,
+					*syncOptions.concurrency,
+					bFilerSignature,
+					aFilerSignature)
 				if err != nil {
 					glog.Errorf("sync from %s to %s: %v", *syncOptions.filerB, *syncOptions.filerA, err)
 					time.Sleep(2147 * time.Millisecond)
@@ -168,14 +216,14 @@ func runFilerSynchronize(cmd *Command, args []string) bool {
 }
 
 // initOffsetFromTsMs Initialize offset
-func initOffsetFromTsMs(grpcDialOption grpc.DialOption, targetFiler pb.ServerAddress, sourceFilerSignature int32, fromTsMs int64) error {
+func initOffsetFromTsMs(grpcDialOption grpc.DialOption, targetFiler pb.ServerAddress, sourceFilerSignature int32, fromTsMs int64, signaturePrefix string) error {
 	if fromTsMs <= 0 {
 		return nil
 	}
 	// convert to nanosecond
 	fromTsNs := fromTsMs * 1000_000
 	// If not successful, exit the program.
-	setOffsetErr := setOffset(grpcDialOption, targetFiler, SyncKeyPrefix, sourceFilerSignature, fromTsNs)
+	setOffsetErr := setOffset(grpcDialOption, targetFiler, signaturePrefix, sourceFilerSignature, fromTsNs)
 	if setOffsetErr != nil {
 		return setOffsetErr
 	}
@@ -183,8 +231,8 @@ func initOffsetFromTsMs(grpcDialOption grpc.DialOption, targetFiler pb.ServerAdd
 	return nil
 }
 
-func doSubscribeFilerMetaChanges(clientId int32, grpcDialOption grpc.DialOption, sourceFiler pb.ServerAddress, sourcePath string, sourceReadChunkFromFiler bool, targetFiler pb.ServerAddress, targetPath string,
-	replicationStr, collection string, ttlSec int, sinkWriteChunkByFiler bool, diskType string, debug bool, sourceFilerSignature int32, targetFilerSignature int32) error {
+func doSubscribeFilerMetaChanges(clientId int32, clientEpoch int32, grpcDialOption grpc.DialOption, sourceFiler pb.ServerAddress, sourcePath string, sourceExcludePaths []string, sourceReadChunkFromFiler bool, targetFiler pb.ServerAddress, targetPath string,
+	replicationStr, collection string, ttlSec int, sinkWriteChunkByFiler bool, diskType string, debug bool, concurrency int, sourceFilerSignature int32, targetFilerSignature int32) error {
 
 	// if first time, start from now
 	// if has previously synced, resume from that point of time
@@ -202,7 +250,7 @@ func doSubscribeFilerMetaChanges(clientId int32, grpcDialOption grpc.DialOption,
 	filerSink.DoInitialize(targetFiler.ToHttpAddress(), targetFiler.ToGrpcAddress(), targetPath, replicationStr, collection, ttlSec, diskType, grpcDialOption, sinkWriteChunkByFiler)
 	filerSink.SetSourceFiler(filerSource)
 
-	persistEventFn := genProcessFunction(sourcePath, targetPath, filerSink, debug)
+	persistEventFn := genProcessFunction(sourcePath, targetPath, sourceExcludePaths, filerSink, debug)
 
 	processEventFn := func(resp *filer_pb.SubscribeMetadataResponse) error {
 		message := resp.EventNotification
@@ -215,25 +263,34 @@ func doSubscribeFilerMetaChanges(clientId int32, grpcDialOption grpc.DialOption,
 		return persistEventFn(resp)
 	}
 
+	if concurrency < 0 || concurrency > 1024 {
+		glog.Warningf("invalid concurrency value, using default: %d", DefaultConcurrencyLimit)
+		concurrency = DefaultConcurrencyLimit
+	}
+	processor := NewMetadataProcessor(processEventFn, concurrency)
+
 	var lastLogTsNs = time.Now().UnixNano()
 	var clientName = fmt.Sprintf("syncFrom_%s_To_%s", string(sourceFiler), string(targetFiler))
-	processEventFnWithOffset := pb.AddOffsetFunc(processEventFn, 3*time.Second, func(counter int64, lastTsNs int64) error {
+	processEventFnWithOffset := pb.AddOffsetFunc(func(resp *filer_pb.SubscribeMetadataResponse) error {
+		processor.AddSyncJob(resp)
+		return nil
+	}, 3*time.Second, func(counter int64, lastTsNs int64) error {
+		if processor.processedTsWatermark == 0 {
+			return nil
+		}
+		// use processor.processedTsWatermark instead of the lastTsNs from the most recent job
 		now := time.Now().UnixNano()
-		glog.V(0).Infof("sync %s to %s progressed to %v %0.2f/sec", sourceFiler, targetFiler, time.Unix(0, lastTsNs), float64(counter)/(float64(now-lastLogTsNs)/1e9))
+		glog.V(0).Infof("sync %s to %s progressed to %v %0.2f/sec", sourceFiler, targetFiler, time.Unix(0, processor.processedTsWatermark), float64(counter)/(float64(now-lastLogTsNs)/1e9))
 		lastLogTsNs = now
 		// collect synchronous offset
-		statsCollect.FilerSyncOffsetGauge.WithLabelValues(sourceFiler.String(), targetFiler.String(), clientName, sourcePath).Set(float64(lastTsNs))
-		return setOffset(grpcDialOption, targetFiler, getSignaturePrefixByPath(sourcePath), sourceFilerSignature, lastTsNs)
+		statsCollect.FilerSyncOffsetGauge.WithLabelValues(sourceFiler.String(), targetFiler.String(), clientName, sourcePath).Set(float64(processor.processedTsWatermark))
+		return setOffset(grpcDialOption, targetFiler, getSignaturePrefixByPath(sourcePath), sourceFilerSignature, processor.processedTsWatermark)
 	})
 
-	return pb.FollowMetadata(sourceFiler, grpcDialOption, clientName, clientId,
+	return pb.FollowMetadata(sourceFiler, grpcDialOption, clientName, clientId, clientEpoch,
 		sourcePath, nil, sourceFilerOffsetTsNs, 0, targetFilerSignature, processEventFnWithOffset, pb.RetryForeverOnError)
 
 }
-
-const (
-	SyncKeyPrefix = "sync."
-)
 
 // When each business is distinguished according to path, and offsets need to be maintained separately.
 func getSignaturePrefixByPath(path string) string {
@@ -247,7 +304,7 @@ func getSignaturePrefixByPath(path string) string {
 
 func getOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, signaturePrefix string, signature int32) (lastOffsetTsNs int64, readErr error) {
 
-	readErr = pb.WithFilerClient(false, filer, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
+	readErr = pb.WithFilerClient(false, signature, filer, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		syncKey := []byte(signaturePrefix + "____")
 		util.Uint32toBytes(syncKey[len(signaturePrefix):len(signaturePrefix)+4], uint32(signature))
 
@@ -273,7 +330,7 @@ func getOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, signature
 }
 
 func setOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, signaturePrefix string, signature int32, offsetTsNs int64) error {
-	return pb.WithFilerClient(false, filer, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
+	return pb.WithFilerClient(false, signature, filer, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 
 		syncKey := []byte(signaturePrefix + "____")
 		util.Uint32toBytes(syncKey[len(signaturePrefix):len(signaturePrefix)+4], uint32(signature))
@@ -299,7 +356,7 @@ func setOffset(grpcDialOption grpc.DialOption, filer pb.ServerAddress, signature
 
 }
 
-func genProcessFunction(sourcePath string, targetPath string, dataSink sink.ReplicationSink, debug bool) func(resp *filer_pb.SubscribeMetadataResponse) error {
+func genProcessFunction(sourcePath string, targetPath string, excludePaths []string, dataSink sink.ReplicationSink, debug bool) func(resp *filer_pb.SubscribeMetadataResponse) error {
 	// process function
 	processEventFn := func(resp *filer_pb.SubscribeMetadataResponse) error {
 		message := resp.EventNotification
@@ -319,7 +376,11 @@ func genProcessFunction(sourcePath string, targetPath string, dataSink sink.Repl
 		if !strings.HasPrefix(resp.Directory, sourcePath) {
 			return nil
 		}
-
+		for _, excludePath := range excludePaths {
+			if strings.HasPrefix(resp.Directory, excludePath) {
+				return nil
+			}
+		}
 		// handle deletions
 		if filer_pb.IsDelete(resp) {
 			if !strings.HasPrefix(string(sourceOldKey), sourcePath) {
@@ -338,7 +399,11 @@ func genProcessFunction(sourcePath string, targetPath string, dataSink sink.Repl
 				return nil
 			}
 			key := buildKey(dataSink, message, targetPath, sourceNewKey, sourcePath)
-			return dataSink.CreateEntry(key, message.NewEntry, message.Signatures)
+			if err := dataSink.CreateEntry(key, message.NewEntry, message.Signatures); err != nil {
+				return fmt.Errorf("create entry1 : %v", err)
+			} else {
+				return nil
+			}
 		}
 
 		// this is something special?
@@ -366,7 +431,11 @@ func genProcessFunction(sourcePath string, targetPath string, dataSink sink.Repl
 				}
 				// create the new entry
 				newKey := buildKey(dataSink, message, targetPath, sourceNewKey, sourcePath)
-				return dataSink.CreateEntry(newKey, message.NewEntry, message.Signatures)
+				if err := dataSink.CreateEntry(newKey, message.NewEntry, message.Signatures); err != nil {
+					return fmt.Errorf("create entry2 : %v", err)
+				} else {
+					return nil
+				}
 
 			} else {
 				// new key is outside of the watched directory
@@ -380,7 +449,11 @@ func genProcessFunction(sourcePath string, targetPath string, dataSink sink.Repl
 			if strings.HasPrefix(string(sourceNewKey), sourcePath) {
 				// new key is in the watched directory
 				key := buildKey(dataSink, message, targetPath, sourceNewKey, sourcePath)
-				return dataSink.CreateEntry(key, message.NewEntry, message.Signatures)
+				if err := dataSink.CreateEntry(key, message.NewEntry, message.Signatures); err != nil {
+					return fmt.Errorf("create entry3 : %v", err)
+				} else {
+					return nil
+				}
 			} else {
 				// new key is also outside of the watched directory
 				// skip

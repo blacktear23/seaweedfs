@@ -1,38 +1,41 @@
 package filer
 
+import (
+	"sync/atomic"
+)
+
 type ReaderPattern struct {
-	isStreaming    bool
-	lastReadOffset int64
+	isSequentialCounter int64
+	lastReadStopOffset  int64
 }
+
+const ModeChangeLimit = 3
 
 // For streaming read: only cache the first chunk
 // For random read: only fetch the requested range, instead of the whole chunk
 
 func NewReaderPattern() *ReaderPattern {
 	return &ReaderPattern{
-		isStreaming:    true,
-		lastReadOffset: -1,
+		isSequentialCounter: 0,
+		lastReadStopOffset:  0,
 	}
 }
 
 func (rp *ReaderPattern) MonitorReadAt(offset int64, size int) {
-	isStreaming := true
-	if rp.lastReadOffset > offset {
-		isStreaming = false
-	}
-	if rp.lastReadOffset == -1 {
-		if offset != 0 {
-			isStreaming = false
+	lastOffset := atomic.SwapInt64(&rp.lastReadStopOffset, offset+int64(size))
+	counter := atomic.LoadInt64(&rp.isSequentialCounter)
+
+	if lastOffset == offset {
+		if counter < ModeChangeLimit {
+			atomic.AddInt64(&rp.isSequentialCounter, 1)
+		}
+	} else {
+		if counter > -ModeChangeLimit {
+			atomic.AddInt64(&rp.isSequentialCounter, -1)
 		}
 	}
-	rp.lastReadOffset = offset
-	rp.isStreaming = isStreaming
-}
-
-func (rp *ReaderPattern) IsStreamingMode() bool {
-	return rp.isStreaming
 }
 
 func (rp *ReaderPattern) IsRandomMode() bool {
-	return !rp.isStreaming
+	return atomic.LoadInt64(&rp.isSequentialCounter) < 0
 }

@@ -81,7 +81,7 @@
 <div class="container">
     <div class="page-header">
         <h1>
-            <a href="https://github.com/chrislusf/seaweedfs"><img src="/seaweedfsstatic/seaweed50x50.png"></img></a>
+            <a href="https://github.com/seaweedfs/seaweedfs"><img src="/seaweedfsstatic/seaweed50x50.png"></img></a>
             SeaweedFS Filer
         </h1>
     </div>
@@ -303,6 +303,11 @@
         var url = window.location.href;
         var xhr = new XMLHttpRequest();
         var fileName = file.name;
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState == XMLHttpRequest.DONE) {
+                finishUpload(fileName)
+            }
+        }
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 var percent = Math.ceil((e.loaded / e.total) * 100);
@@ -328,7 +333,7 @@
         if (!baseUrl.endsWith('/')) {
             baseUrl += '/';
         }
-        var url = baseUrl + dirName;
+        var url = baseUrl + encodeURIComponent(dirName);
         if (!url.endsWith('/')) {
             url += '/';
         }
@@ -344,9 +349,9 @@
         if (newName == null || newName == '') {
             return;
         }
-        var url = basePath + newName;
+        var url = basePath + encodeURIComponent(newName);
         var originPath = basePath + originName;
-        url += '?mv.from=' + originPath;
+        url += '?mv.from=' + encodeURIComponent(originPath);
         var xhr = new XMLHttpRequest();
         xhr.open('POST', url, false);
         xhr.setRequestHeader('Content-Type', '');

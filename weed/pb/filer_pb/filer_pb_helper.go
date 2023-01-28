@@ -7,14 +7,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/golang/protobuf/proto"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/viant/ptrie"
+	"google.golang.org/protobuf/proto"
 )
 
 func (entry *Entry) IsInRemoteOnly() bool {
-	return len(entry.Chunks) == 0 && entry.RemoteEntry != nil && entry.RemoteEntry.RemoteSize > 0
+	return len(entry.GetChunks()) == 0 && entry.RemoteEntry != nil && entry.RemoteEntry.RemoteSize > 0
 }
 
 func (entry *Entry) IsDirectoryKeyObject() bool {

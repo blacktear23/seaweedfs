@@ -6,16 +6,16 @@ package command
 import (
 	"context"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/mount"
-	"github.com/chrislusf/seaweedfs/weed/mount/meta_cache"
-	"github.com/chrislusf/seaweedfs/weed/mount/unmount"
-	"github.com/chrislusf/seaweedfs/weed/pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/mount_pb"
-	"github.com/chrislusf/seaweedfs/weed/security"
-	"github.com/chrislusf/seaweedfs/weed/storage/types"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/mount"
+	"github.com/seaweedfs/seaweedfs/weed/mount/meta_cache"
+	"github.com/seaweedfs/seaweedfs/weed/mount/unmount"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/mount_pb"
+	"github.com/seaweedfs/seaweedfs/weed/security"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"google.golang.org/grpc/reflection"
 	"net"
 	"net/http"
@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/util"
-	"github.com/chrislusf/seaweedfs/weed/util/grace"
+	"github.com/seaweedfs/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/util/grace"
 )
 
 func runMount(cmd *Command, args []string) bool {
@@ -107,7 +107,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		if mountDirHash < 0 {
 			mountDirHash = -mountDirHash
 		}
-		*option.localSocket = fmt.Sprintf("/tmp/seaweefs-mount-%d.sock", mountDirHash)
+		*option.localSocket = fmt.Sprintf("/tmp/seaweedfs-mount-%d.sock", mountDirHash)
 	}
 	if err := os.Remove(*option.localSocket); err != nil && !os.IsNotExist(err) {
 		glog.Fatalf("Failed to remove %s, error: %s", *option.localSocket, err.Error())
@@ -157,7 +157,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 
 	// Ensure target mount point availability
 	if isValid := checkMountPointAvailable(dir); !isValid {
-		glog.Fatalf("Expected mount to still be active, target mount point: %s, please check!", dir)
+		glog.Fatalf("Target mount point is not available: %s, please check!", dir)
 		return true
 	}
 
@@ -166,7 +166,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 	// mount fuse
 	fuseMountOptions := &fuse.MountOptions{
 		AllowOther:               *option.allowOthers,
-		Options:                  nil,
+		Options:                  option.extraOptions,
 		MaxBackground:            128,
 		MaxWrite:                 1024 * 1024 * 2,
 		MaxReadAhead:             1024 * 1024 * 2,
@@ -256,7 +256,8 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 
 	seaweedFileSystem.StartBackgroundTasks()
 
-	fmt.Printf("This is SeaweedFS version %s %s %s\n", util.Version(), runtime.GOOS, runtime.GOARCH)
+	glog.V(0).Infof("mounted %s%s to %v", *option.filer, mountRoot, dir)
+	glog.V(0).Infof("This is SeaweedFS version %s %s %s", util.Version(), runtime.GOOS, runtime.GOARCH)
 
 	server.Serve()
 

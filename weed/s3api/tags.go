@@ -3,7 +3,9 @@ package s3api
 import (
 	"encoding/xml"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -38,12 +40,17 @@ func FromTags(tags map[string]string) (t *Tagging) {
 			Value: v,
 		})
 	}
+	if tagArr := t.TagSet.Tag; len(tagArr) > 0 {
+		sort.SliceStable(tagArr, func(i, j int) bool {
+			return tagArr[i].Key < tagArr[j].Key
+		})
+	}
 	return
 }
 
 func parseTagsHeader(tags string) (map[string]string, error) {
 	parsedTags := make(map[string]string)
-	for _, v := range strings.Split(tags, "&") {
+	for _, v := range util.StringSplit(tags, "&") {
 		tag := strings.Split(v, "=")
 		if len(tag) == 2 {
 			parsedTags[tag[0]] = tag[1]

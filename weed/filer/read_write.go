@@ -2,9 +2,10 @@ package filer
 
 import (
 	"bytes"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/wdclient"
 	"time"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/wdclient"
 )
 
 func ReadEntry(masterClient *wdclient.MasterClient, filerClient filer_pb.SeaweedFilerClient, dir, name string, byteBuffer *bytes.Buffer) error {
@@ -22,7 +23,7 @@ func ReadEntry(masterClient *wdclient.MasterClient, filerClient filer_pb.Seaweed
 		return err
 	}
 
-	return StreamContent(masterClient, byteBuffer, respLookupEntry.Entry.Chunks, 0, int64(FileSize(respLookupEntry.Entry)))
+	return StreamContent(masterClient, byteBuffer, respLookupEntry.Entry.GetChunks(), 0, int64(FileSize(respLookupEntry.Entry)))
 
 }
 
@@ -60,7 +61,7 @@ func SaveInsideFiler(client filer_pb.SeaweedFilerClient, dir, name string, conte
 				},
 				Content: content,
 			},
-			SkipCheckParentDirectory: true,
+			SkipCheckParentDirectory: false,
 		})
 	} else if err == nil {
 		entry := resp.Entry

@@ -1,9 +1,13 @@
 package mount
 
 import (
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/hanwen/go-fuse/v2/fuse"
+	"bytes"
+	"fmt"
 	"io"
+
+	"github.com/hanwen/go-fuse/v2/fuse"
+
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
 
 /**
@@ -37,23 +41,49 @@ func (wfs *WFS) Read(cancel <-chan struct{}, in *fuse.ReadIn, buff []byte) (fuse
 		return nil, fuse.ENOENT
 	}
 
+	fh.Lock()
+	defer fh.Unlock()
+
 	offset := int64(in.Offset)
-	fh.lockForRead(offset, len(buff))
-	defer fh.unlockForRead(offset, len(buff))
-
-	totalRead, err := fh.readFromChunks(buff, offset)
-	if err == nil || err == io.EOF {
-		maxStop := fh.readFromDirtyPages(buff, offset)
-		totalRead = max(maxStop-offset, totalRead)
-	}
-	if err == io.EOF {
-		err = nil
-	}
-
+	totalRead, err := readDataByFileHandle(buff, fh, offset)
 	if err != nil {
 		glog.Warningf("file handle read %s %d: %v", fh.FullPath(), totalRead, err)
 		return nil, fuse.EIO
 	}
 
+	if IsDebugFileReadWrite {
+		// print(".")
+		mirrorData := make([]byte, totalRead)
+		fh.mirrorFile.ReadAt(mirrorData, offset)
+		if bytes.Compare(mirrorData, buff[:totalRead]) != 0 {
+
+			againBuff := make([]byte, len(buff))
+			againRead, _ := readDataByFileHandle(buff, fh, offset)
+			againCorrect := bytes.Compare(mirrorData, againBuff[:againRead]) == 0
+			againSame := bytes.Compare(buff[:totalRead], againBuff[:againRead]) == 0
+
+			fmt.Printf("\ncompare %v [%d,%d) size:%d againSame:%v againCorrect:%v\n", fh.mirrorFile.Name(), offset, offset+totalRead, totalRead, againSame, againCorrect)
+			//fmt.Printf("read mirrow data: %v\n", mirrorData)
+			//fmt.Printf("read actual data: %v\n", buff[:totalRead])
+		}
+	}
+
 	return fuse.ReadResultData(buff[:totalRead]), fuse.OK
+}
+
+func readDataByFileHandle(buff []byte, fhIn *FileHandle, offset int64) (int64, error) {
+	// read data from source file
+	size := len(buff)
+	fhIn.lockForRead(offset, size)
+	defer fhIn.unlockForRead(offset, size)
+
+	n, tsNs, err := fhIn.readFromChunks(buff, offset)
+	if err == nil || err == io.EOF {
+		maxStop := fhIn.readFromDirtyPages(buff, offset, tsNs)
+		n = max(maxStop-offset, n)
+	}
+	if err == io.EOF {
+		err = nil
+	}
+	return n, err
 }

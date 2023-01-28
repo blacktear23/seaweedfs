@@ -39,6 +39,10 @@ spec:
       priorityClassName: {{ .Values.s3.priorityClassName | quote }}
       {{- end }}
       enableServiceLinks: false
+      {{- if .Values.s3.initContainers }}
+      initContainers:
+        {{ tpl .Values.s3.initContainers . | nindent 8 | trim }}
+      {{- end }}
       containers:
         - name: seaweedfs
           image: {{ template "s3.image" . }}
@@ -68,13 +72,19 @@ spec:
             - "/bin/sh"
             - "-ec"
             - | 
-              exec /usr/bin/weed -logdir=/logs \
+              exec /usr/bin/weed \
+               {{- if eq .Values.s3.logs.type "hostPath" }}
+              -logdir=/logs \
+              {{- else }}
+              -logtostderr=true \
+              {{- end }}
               {{- if .Values.s3.loggingOverrideLevel }}
               -v={{ .Values.s3.loggingOverrideLevel }} \
               {{- else }}
               -v={{ .Values.global.loggingLevel }} \
               {{- end }}
               s3 \
+              -ip.bind={{ .Values.s3.bindAddress }} \
               -port={{ .Values.s3.port }} \
               {{- if .Values.s3.metricsPort }}
               -metricsPort {{ .Values.s3.metricsPort }} \
@@ -127,6 +137,10 @@ spec:
           ports:
             - containerPort: {{ .Values.s3.port }}
               name: swfs-s3
+            {{- if .Values.s3.metricsPort }}
+            - containerPort: {{ .Values.s3.metricsPort }}
+              name: "metrics"
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /status
@@ -159,7 +173,7 @@ spec:
         {{- if eq .Values.s3.logs.type "hostPath" }}
         - name: logs
           hostPath:
-            path: /storage/logs/seaweedfs/s3
+            path: {{ .Values.s3.logs.hostPathPrefix }}/logs/seaweedfs/s3
             type: DirectoryOrCreate
         {{- end }}
         {{- if .Values.global.enableSecurity }}

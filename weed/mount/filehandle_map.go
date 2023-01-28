@@ -1,8 +1,9 @@
 package mount
 
 import (
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"sync"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
 
 type FileHandleToInode struct {
@@ -49,7 +50,9 @@ func (i *FileHandleToInode) AcquireFileHandle(wfs *WFS, inode uint64, entry *fil
 	} else {
 		fh.counter++
 	}
-	fh.entry = entry
+	if fh.GetEntry() != entry {
+		fh.SetEntry(entry)
+	}
 	return fh
 }
 
@@ -62,7 +65,7 @@ func (i *FileHandleToInode) ReleaseByInode(inode uint64) {
 		if fh.counter <= 0 {
 			delete(i.inode2fh, inode)
 			delete(i.fh2inode, fh.fh)
-			fh.Release()
+			fh.ReleaseHandle()
 		}
 	}
 }
@@ -79,7 +82,7 @@ func (i *FileHandleToInode) ReleaseByHandle(fh FileHandleId) {
 			if fhHandle.counter <= 0 {
 				delete(i.inode2fh, inode)
 				delete(i.fh2inode, fhHandle.fh)
-				fhHandle.Release()
+				fhHandle.ReleaseHandle()
 			}
 		}
 

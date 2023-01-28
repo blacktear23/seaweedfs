@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/operation"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/operation"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func (f *Filer) appendToFile(targetFile string, data []byte) error {
@@ -36,11 +36,11 @@ func (f *Filer) appendToFile(targetFile string, data []byte) error {
 	} else if err != nil {
 		return fmt.Errorf("find %s: %v", fullpath, err)
 	} else {
-		offset = int64(TotalSize(entry.Chunks))
+		offset = int64(TotalSize(entry.GetChunks()))
 	}
 
 	// append to existing chunks
-	entry.Chunks = append(entry.Chunks, uploadResult.ToPbFileChunk(assignResult.Fid, offset))
+	entry.Chunks = append(entry.GetChunks(), uploadResult.ToPbFileChunk(assignResult.Fid, offset, time.Now().UnixNano()))
 
 	// update the entry
 	err = f.CreateEntry(context.Background(), entry, false, false, nil, false)

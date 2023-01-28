@@ -1,7 +1,7 @@
 package page_writer
 
 import (
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"testing"
 )
 
@@ -31,14 +31,14 @@ func writeRange(uploadPipeline *UploadPipeline, startOff, stopOff int64) {
 	p := make([]byte, 4)
 	for i := startOff / 4; i < stopOff/4; i += 4 {
 		util.Uint32toBytes(p, uint32(i))
-		uploadPipeline.SaveDataAt(p, i, false)
+		uploadPipeline.SaveDataAt(p, i, false, 0)
 	}
 }
 
 func confirmRange(t *testing.T, uploadPipeline *UploadPipeline, startOff, stopOff int64) {
 	p := make([]byte, 4)
 	for i := startOff; i < stopOff/4; i += 4 {
-		uploadPipeline.MaybeReadDataAt(p, i)
+		uploadPipeline.MaybeReadDataAt(p, i, 0)
 		x := util.BytesToUint32(p)
 		if x != uint32(i) {
 			t.Errorf("expecting %d found %d at offset [%d,%d)", i, x, i, i+4)

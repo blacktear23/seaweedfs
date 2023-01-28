@@ -4,8 +4,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 type Attr struct {
@@ -46,7 +46,7 @@ type Entry struct {
 }
 
 func (entry *Entry) Size() uint64 {
-	return maxUint64(maxUint64(TotalSize(entry.Chunks), entry.FileSize), uint64(len(entry.Content)))
+	return maxUint64(maxUint64(TotalSize(entry.GetChunks()), entry.FileSize), uint64(len(entry.Content)))
 }
 
 func (entry *Entry) Timestamp() time.Time {
@@ -91,7 +91,7 @@ func (entry *Entry) ToExistingProtoEntry(message *filer_pb.Entry) {
 	}
 	message.IsDirectory = entry.IsDirectory()
 	message.Attributes = EntryAttributeToPb(entry)
-	message.Chunks = entry.Chunks
+	message.Chunks = entry.GetChunks()
 	message.Extended = entry.Extended
 	message.HardLinkId = entry.HardLinkId
 	message.HardLinkCounter = entry.HardLinkCounter
@@ -109,6 +109,7 @@ func FromPbEntryToExistingEntry(message *filer_pb.Entry, fsEntry *Entry) {
 	fsEntry.Content = message.Content
 	fsEntry.Remote = message.RemoteEntry
 	fsEntry.Quota = message.Quota
+	fsEntry.FileSize = FileSize(message)
 }
 
 func (entry *Entry) ToProtoFullEntry() *filer_pb.FullEntry {
@@ -120,6 +121,10 @@ func (entry *Entry) ToProtoFullEntry() *filer_pb.FullEntry {
 		Dir:   dir,
 		Entry: entry.ToProtoEntry(),
 	}
+}
+
+func (entry *Entry) GetChunks() []*filer_pb.FileChunk {
+	return entry.Chunks
 }
 
 func FromPbEntry(dir string, entry *filer_pb.Entry) *Entry {

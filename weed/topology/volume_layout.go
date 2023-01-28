@@ -3,15 +3,16 @@ package topology
 import (
 	"errors"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/storage/types"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/storage"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/storage/super_block"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/storage"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
 )
 
 type copyState int
@@ -103,6 +104,8 @@ func (v *volumesBinaryState) copyState(list *VolumeLocationList) copyState {
 
 // mapping from volume to its locations, inverted from server to volume
 type VolumeLayout struct {
+	growRequestCount int32
+	growRequestTime  time.Time
 	rp               *super_block.ReplicaPlacement
 	ttl              *needle.TTL
 	diskType         types.DiskType
@@ -114,8 +117,6 @@ type VolumeLayout struct {
 	volumeSizeLimit  uint64
 	replicationAsMin bool
 	accessLock       sync.RWMutex
-	growRequestCount int
-	growRequestTime  time.Time
 }
 
 type VolumeLayoutStats struct {
@@ -319,18 +320,19 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (*n
 }
 
 func (vl *VolumeLayout) HasGrowRequest() bool {
-	if vl.growRequestCount > 0 && vl.growRequestTime.Add(time.Minute).After(time.Now()) {
+	if atomic.LoadInt32(&vl.growRequestCount) > 0 &&
+		vl.growRequestTime.Add(time.Minute).After(time.Now()) {
 		return true
 	}
 	return false
 }
 func (vl *VolumeLayout) AddGrowRequest() {
 	vl.growRequestTime = time.Now()
-	vl.growRequestCount++
+	atomic.AddInt32(&vl.growRequestCount, 1)
 }
 func (vl *VolumeLayout) DoneGrowRequest() {
 	vl.growRequestTime = time.Unix(0, 0)
-	vl.growRequestCount = 0
+	atomic.StoreInt32(&vl.growRequestCount, 0)
 }
 
 func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
@@ -473,13 +475,19 @@ func (vl *VolumeLayout) SetVolumeCrowded(vid needle.VolumeId) {
 	}
 }
 
-func (vl *VolumeLayout) ToMap() map[string]interface{} {
-	m := make(map[string]interface{})
-	m["replication"] = vl.rp.String()
-	m["ttl"] = vl.ttl.String()
-	m["writables"] = vl.writables
+type VolumeLayoutInfo struct {
+	Replication string            `json:"replication"`
+	TTL         string            `json:"ttl"`
+	Writables   []needle.VolumeId `json:"writables"`
+	Collection  string            `json:"collection"`
+}
+
+func (vl *VolumeLayout) ToInfo() (info VolumeLayoutInfo) {
+	info.Replication = vl.rp.String()
+	info.TTL = vl.ttl.String()
+	info.Writables = vl.writables
 	//m["locations"] = vl.vid2location
-	return m
+	return
 }
 
 func (vl *VolumeLayout) Stats() *VolumeLayoutStats {

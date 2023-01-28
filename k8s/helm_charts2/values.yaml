@@ -39,6 +39,7 @@ master:
   replicas: 1
   port: 9333
   grpcPort: 19333
+  metricsPort: 9327
   ipBind: "0.0.0.0"
   volumePreallocate: false
   volumeSizeLimitMB: 1000
@@ -58,15 +59,27 @@ master:
   # Disable http request, only gRpc operations are allowed
   disableHttp: false
 
+  # can use ANY storage-class , example with local-path-provisioner
+  #  data:
+  #    type: "persistentVolumeClaim"
+  #    size: "24Ti"
+  #    storageClass: "local-path-provisioner"
+  data:
+    type: "hostPath"
+    size: ""
+    storageClass: ""
+    hostPathPrefix: /ssd
+
+  logs:
+    type: "hostPath"
+    size: ""
+    storageClass: ""
+    hostPathPrefix: /storage
+
+  initContainers: ""
+
   extraVolumes: ""
   extraVolumeMounts: ""
-
-  # storage and storageClass are the settings for configuring stateful
-  # storage for the master pods. storage should be set to the disk size of
-  # the attached volume. storageClass is the class of storage which defaults
-  # to null (the Kube cluster will pick the default).
-  storage: 25Gi
-  storageClass: null
 
   # Resource requests, limits, etc. for the master cluster placement. This
   # should map directly to the value of the resources field for a PodSpec,
@@ -156,7 +169,7 @@ volume:
   # minimum free disk space(in percents). If free disk space lower this value - all volumes marks as ReadOnly
   minFreeSpacePercent: 7
 
-# can use ANY storage-class , example with local-path-provisner
+# can use ANY storage-class , example with local-path-provisioner
 #  data:
 #    type: "persistentVolumeClaim"
 #    size: "24Ti"
@@ -165,15 +178,19 @@ volume:
     type: "hostPath"
     size: ""
     storageClass: ""
+    hostPathPrefix: /storage
+
   idx:
     type: "hostPath"
     size: ""
     storageClass: ""
+    hostPathPrefix: /ssd
 
   logs:
     type: "hostPath"
     size: ""
     storageClass: ""
+    hostPathPrefix: /storage
 
   # limit background compaction or copying speed in mega bytes per second
   compactionMBps: "50"
@@ -201,6 +218,8 @@ volume:
 
   # Adjust jpg orientation when uploading.
   imagesFixOrientation: false
+
+  initContainers: ""
 
   extraVolumes: ""
   extraVolumeMounts: ""
@@ -275,15 +294,35 @@ filer:
   # Disable http request, only gRpc operations are allowed
   disableHttp: false
 
+  # DEPRECATE: enablePVC, storage, storageClass
+  # Consider replacing with filer.data section below instead.
+
+  # Settings for configuring stateful storage of filer pods.
   # enablePVC will create a pvc for filer for data persistence.
   enablePVC: false
-
-  # storage and storageClass are the settings for configuring stateful
-  # storage for the master pods. storage should be set to the disk size of
-  # the attached volume. storageClass is the class of storage which defaults
-  # to null (the Kube cluster will pick the default).
+  # storage should be set to the disk size of the attached volume.
   storage: 25Gi
+  # storageClass is the class of storage which defaults to null (the Kube cluster will pick the default).
   storageClass: null
+
+  # can use ANY storage-class , example with local-path-provisioner
+  #  data:
+  #    type: "persistentVolumeClaim"
+  #    size: "24Ti"
+  #    storageClass: "local-path-provisioner"
+  data:
+    type: "hostPath"
+    size: ""
+    storageClass: ""
+    hostPathPrefix: /storage
+
+  logs:
+    type: "hostPath"
+    size: ""
+    storageClass: ""
+    hostPathPrefix: /storage
+
+  initContainers: ""
 
   extraVolumes: ""
   extraVolumeMounts: ""
@@ -387,6 +426,7 @@ s3:
   imageTag: null
   restartPolicy: null
   replicas: 1
+  bindAddress: 0.0.0.0
   port: 8333
   metricsPort: 9327
   loggingOverrideLevel: null
@@ -399,6 +439,8 @@ s3:
 
   # Suffix of the host name, {bucket}.{domainName}
   domainName: ""
+
+  initContainers: ""
 
   extraVolumes: ""
   extraVolumeMounts: ""
@@ -430,7 +472,7 @@ s3:
     type: "hostPath"
     size: ""
     storageClass: ""
-
+    hostPathPrefix: /storage
 
 certificates:
   commonName: "SeaweedFS CA"

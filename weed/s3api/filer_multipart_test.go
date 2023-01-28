@@ -3,7 +3,7 @@ package s3api
 import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
@@ -57,19 +57,19 @@ func Test_findByPartNumber(t *testing.T) {
 	}
 
 	parts := []CompletedPart{
-		CompletedPart{
+		{
 			ETag:       "xxx",
 			PartNumber: 1,
 		},
-		CompletedPart{
+		{
 			ETag:       "lll",
 			PartNumber: 1,
 		},
-		CompletedPart{
+		{
 			ETag:       "yyy",
 			PartNumber: 3,
 		},
-		CompletedPart{
+		{
 			ETag:       "zzz",
 			PartNumber: 5,
 		},

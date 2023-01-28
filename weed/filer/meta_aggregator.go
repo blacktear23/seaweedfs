@@ -3,20 +3,22 @@ package filer
 import (
 	"context"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/cluster"
-	"github.com/chrislusf/seaweedfs/weed/pb/master_pb"
-	"github.com/chrislusf/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/cluster"
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"io"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/util/log_buffer"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
 )
 
 type MetaAggregator struct {
@@ -57,7 +59,7 @@ func (ma *MetaAggregator) OnPeerUpdate(update *master_pb.ClusterNodeUpdate, star
 	if update.IsAdd {
 		// every filer should subscribe to a new filer
 		if ma.setActive(address, true) {
-			go ma.loopSubscribeToOnefiler(ma.filer, ma.self, address, startFrom)
+			go ma.loopSubscribeToOneFiler(ma.filer, ma.self, address, startFrom)
 		}
 	} else {
 		ma.setActive(address, false)
@@ -89,17 +91,21 @@ func (ma *MetaAggregator) isActive(address pb.ServerAddress) (isActive bool) {
 	return count > 0 && isActive
 }
 
-func (ma *MetaAggregator) loopSubscribeToOnefiler(f *Filer, self pb.ServerAddress, peer pb.ServerAddress, startFrom time.Time) {
+func (ma *MetaAggregator) loopSubscribeToOneFiler(f *Filer, self pb.ServerAddress, peer pb.ServerAddress, startFrom time.Time) {
 	lastTsNs := startFrom.UnixNano()
 	for {
-		glog.V(0).Infof("loopSubscribeToOnefiler read %s start from %v %d", peer, time.Unix(0, lastTsNs), lastTsNs)
+		glog.V(0).Infof("loopSubscribeToOneFiler read %s start from %v %d", peer, time.Unix(0, lastTsNs), lastTsNs)
 		nextLastTsNs, err := ma.doSubscribeToOneFiler(f, self, peer, lastTsNs)
 		if !ma.isActive(peer) {
 			glog.V(0).Infof("stop subscribing remote %s meta change", peer)
 			return
 		}
 		if err != nil {
-			glog.V(0).Infof("subscribing remote %s meta change: %v", peer, err)
+			errLvl := glog.Level(0)
+			if strings.Contains(err.Error(), "duplicated local subscription detected") {
+				errLvl = glog.Level(4)
+			}
+			glog.V(errLvl).Infof("subscribing remote %s meta change: %v", peer, err)
 		}
 		if lastTsNs < nextLastTsNs {
 			lastTsNs = nextLastTsNs
@@ -185,15 +191,17 @@ func (ma *MetaAggregator) doSubscribeToOneFiler(f *Filer, self pb.ServerAddress,
 		return nil
 	}
 
-	glog.V(4).Infof("subscribing remote %s meta change: %v", peer, time.Unix(0, lastTsNs))
-	err = pb.WithFilerClient(true, peer, ma.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
+	glog.V(0).Infof("subscribing remote %s meta change: %v, clientId:%d", peer, time.Unix(0, lastTsNs), ma.filer.UniqueFilerId)
+	err = pb.WithFilerClient(true, 0, peer, ma.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
+		atomic.AddInt32(&ma.filer.UniqueFilerEpoch, 1)
 		stream, err := client.SubscribeLocalMetadata(ctx, &filer_pb.SubscribeMetadataRequest{
-			ClientName: "filer:" + string(self),
-			PathPrefix: "/",
-			SinceNs:    lastTsNs,
-			ClientId:   int32(ma.filer.UniqueFileId),
+			ClientName:  "filer:" + string(self),
+			PathPrefix:  "/",
+			SinceNs:     lastTsNs,
+			ClientId:    ma.filer.UniqueFilerId,
+			ClientEpoch: atomic.LoadInt32(&ma.filer.UniqueFilerEpoch),
 		})
 		if err != nil {
 			return fmt.Errorf("subscribe: %v", err)
@@ -220,7 +228,7 @@ func (ma *MetaAggregator) doSubscribeToOneFiler(f *Filer, self pb.ServerAddress,
 }
 
 func (ma *MetaAggregator) readFilerStoreSignature(peer pb.ServerAddress) (sig int32, err error) {
-	err = pb.WithFilerClient(false, peer, ma.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
+	err = pb.WithFilerClient(false, 0, peer, ma.grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 		if err != nil {
 			return err
@@ -235,10 +243,15 @@ const (
 	MetaOffsetPrefix = "Meta"
 )
 
-func (ma *MetaAggregator) readOffset(f *Filer, peer pb.ServerAddress, peerSignature int32) (lastTsNs int64, err error) {
-
+func GetPeerMetaOffsetKey(peerSignature int32) []byte {
 	key := []byte(MetaOffsetPrefix + "xxxx")
 	util.Uint32toBytes(key[len(MetaOffsetPrefix):], uint32(peerSignature))
+	return key
+}
+
+func (ma *MetaAggregator) readOffset(f *Filer, peer pb.ServerAddress, peerSignature int32) (lastTsNs int64, err error) {
+
+	key := GetPeerMetaOffsetKey(peerSignature)
 
 	value, err := f.Store.KvGet(context.Background(), key)
 
@@ -255,8 +268,7 @@ func (ma *MetaAggregator) readOffset(f *Filer, peer pb.ServerAddress, peerSignat
 
 func (ma *MetaAggregator) updateOffset(f *Filer, peer pb.ServerAddress, peerSignature int32, lastTsNs int64) (err error) {
 
-	key := []byte(MetaOffsetPrefix + "xxxx")
-	util.Uint32toBytes(key[len(MetaOffsetPrefix):], uint32(peerSignature))
+	key := GetPeerMetaOffsetKey(peerSignature)
 
 	value := make([]byte, 8)
 	util.Uint64toBytes(value, uint64(lastTsNs))

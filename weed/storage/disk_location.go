@@ -4,17 +4,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	"github.com/chrislusf/seaweedfs/weed/stats"
-	"github.com/chrislusf/seaweedfs/weed/storage/erasure_coding"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/storage/types"
-	"github.com/chrislusf/seaweedfs/weed/util"
 	"github.com/google/uuid"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 type DiskLocation struct {
@@ -22,8 +24,8 @@ type DiskLocation struct {
 	DirectoryUuid          string
 	IdxDirectory           string
 	DiskType               types.DiskType
-	MaxVolumeCount         int
-	OriginalMaxVolumeCount int
+	MaxVolumeCount         int32
+	OriginalMaxVolumeCount int32
 	MinFreeSpace           util.MinFreeSpace
 	volumes                map[needle.VolumeId]*Volume
 	volumesLock            sync.RWMutex
@@ -56,7 +58,7 @@ func GenerateDirUuid(dir string) (dirUuidString string, err error) {
 	return dirUuidString, nil
 }
 
-func NewDiskLocation(dir string, maxVolumeCount int, minFreeSpace util.MinFreeSpace, idxDir string, diskType types.DiskType) *DiskLocation {
+func NewDiskLocation(dir string, maxVolumeCount int32, minFreeSpace util.MinFreeSpace, idxDir string, diskType types.DiskType) *DiskLocation {
 	dir = util.ResolvePath(dir)
 	if idxDir == "" {
 		idxDir = dir
@@ -112,7 +114,7 @@ func getValidVolumeName(basename string) string {
 	return ""
 }
 
-func (l *DiskLocation) loadExistingVolume(dirEntry os.DirEntry, needleMapKind NeedleMapKind, skipIfEcVolumesExists bool) bool {
+func (l *DiskLocation) loadExistingVolume(dirEntry os.DirEntry, needleMapKind NeedleMapKind, skipIfEcVolumesExists bool, ldbTimeout int64) bool {
 	basename := dirEntry.Name()
 	if dirEntry.IsDir() {
 		return false
@@ -156,7 +158,7 @@ func (l *DiskLocation) loadExistingVolume(dirEntry os.DirEntry, needleMapKind Ne
 	}
 
 	// load the volume
-	v, e := NewVolume(l.Directory, l.IdxDirectory, collection, vid, needleMapKind, nil, nil, 0, 0)
+	v, e := NewVolume(l.Directory, l.IdxDirectory, collection, vid, needleMapKind, nil, nil, 0, 0, ldbTimeout)
 	if e != nil {
 		glog.V(0).Infof("new volume %s error %s", volumeName, e)
 		return false
@@ -170,7 +172,7 @@ func (l *DiskLocation) loadExistingVolume(dirEntry os.DirEntry, needleMapKind Ne
 	return true
 }
 
-func (l *DiskLocation) concurrentLoadingVolumes(needleMapKind NeedleMapKind, concurrency int) {
+func (l *DiskLocation) concurrentLoadingVolumes(needleMapKind NeedleMapKind, concurrency int, ldbTimeout int64) {
 
 	task_queue := make(chan os.DirEntry, 10*concurrency)
 	go func() {
@@ -196,7 +198,7 @@ func (l *DiskLocation) concurrentLoadingVolumes(needleMapKind NeedleMapKind, con
 		go func() {
 			defer wg.Done()
 			for fi := range task_queue {
-				_ = l.loadExistingVolume(fi, needleMapKind, true)
+				_ = l.loadExistingVolume(fi, needleMapKind, true, ldbTimeout)
 			}
 		}()
 	}
@@ -204,9 +206,23 @@ func (l *DiskLocation) concurrentLoadingVolumes(needleMapKind NeedleMapKind, con
 
 }
 
-func (l *DiskLocation) loadExistingVolumes(needleMapKind NeedleMapKind) {
+func (l *DiskLocation) loadExistingVolumes(needleMapKind NeedleMapKind, ldbTimeout int64) {
 
-	l.concurrentLoadingVolumes(needleMapKind, 10)
+	workerNum := runtime.NumCPU()
+	val, ok := os.LookupEnv("GOMAXPROCS")
+	if ok {
+		num, err := strconv.Atoi(val)
+		if err != nil || num < 1 {
+			num = 10
+			glog.Warningf("failed to set worker number from GOMAXPROCS , set to default:10")
+		}
+		workerNum = num
+	} else {
+		if workerNum <= 10 {
+			workerNum = 10
+		}
+	}
+	l.concurrentLoadingVolumes(needleMapKind, workerNum, ldbTimeout)
 	glog.V(0).Infof("Store started on dir: %s with %d volumes max %d", l.Directory, len(l.volumes), l.MaxVolumeCount)
 
 	l.loadAllEcShards()
@@ -276,7 +292,7 @@ func (l *DiskLocation) deleteVolumeById(vid needle.VolumeId) (found bool, e erro
 
 func (l *DiskLocation) LoadVolume(vid needle.VolumeId, needleMapKind NeedleMapKind) bool {
 	if fileInfo, found := l.LocateVolume(vid); found {
-		return l.loadExistingVolume(fileInfo, needleMapKind, false)
+		return l.loadExistingVolume(fileInfo, needleMapKind, false, 0)
 	}
 	return false
 }
@@ -348,7 +364,7 @@ func (l *DiskLocation) VolumesLen() int {
 func (l *DiskLocation) SetStopping() {
 	l.volumesLock.Lock()
 	for _, v := range l.volumes {
-		v.SetStopping()
+		v.SyncToDisk()
 	}
 	l.volumesLock.Unlock()
 

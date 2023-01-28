@@ -1,9 +1,9 @@
 package storage
 
 import (
-	"github.com/chrislusf/seaweedfs/weed/pb/volume_server_pb"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
-	"github.com/chrislusf/seaweedfs/weed/storage/super_block"
+	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
 )
 
 type VolumeFileScanner4ReadAll struct {
@@ -30,10 +30,15 @@ func (scanner *VolumeFileScanner4ReadAll) VisitNeedle(n *needle.Needle, offset i
 	}
 
 	sendErr := scanner.Stream.Send(&volume_server_pb.ReadAllNeedlesResponse{
-		VolumeId:   uint32(scanner.V.Id),
-		NeedleId:   uint64(n.Id),
-		Cookie:     uint32(n.Cookie),
-		NeedleBlob: n.Data,
+		VolumeId:             uint32(scanner.V.Id),
+		NeedleId:             uint64(n.Id),
+		Cookie:               uint32(n.Cookie),
+		NeedleBlob:           n.Data,
+		NeedleBlobCompressed: n.IsCompressed(),
+		LastModified:         n.LastModified,
+		Crc:                  n.Checksum.Value(),
+		Name:                 n.Name,
+		Mime:                 n.Mime,
 	})
 	if sendErr != nil {
 		return sendErr

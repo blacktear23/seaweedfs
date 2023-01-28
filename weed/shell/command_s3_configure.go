@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/filer"
 	"io"
 	"sort"
 	"strings"
 
-	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/pb/iam_pb"
+	"github.com/seaweedfs/seaweedfs/weed/filer"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 )
 
 func init() {
@@ -48,7 +49,7 @@ func (c *commandS3Configure) Do(args []string, commandEnv *CommandEnv, writer io
 
 	var buf bytes.Buffer
 	if err = commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-		return filer.ReadEntry(commandEnv.MasterClient, client, filer.IamConfigDirecotry, filer.IamIdentityFile, &buf)
+		return filer.ReadEntry(commandEnv.MasterClient, client, filer.IamConfigDirectory, filer.IamIdentityFile, &buf)
 	}); err != nil && err != filer_pb.ErrNotFound {
 		return err
 	}
@@ -164,6 +165,10 @@ func (c *commandS3Configure) Do(args []string, commandEnv *CommandEnv, writer io
 		s3cfg.Identities = append(s3cfg.Identities, &identity)
 	}
 
+	if err = filer.CheckDuplicateAccessKey(s3cfg); err != nil {
+		return err
+	}
+
 	buf.Reset()
 	filer.ProtoToText(&buf, s3cfg)
 
@@ -173,7 +178,7 @@ func (c *commandS3Configure) Do(args []string, commandEnv *CommandEnv, writer io
 	if *apply {
 
 		if err := commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-			return filer.SaveInsideFiler(client, filer.IamConfigDirecotry, filer.IamIdentityFile, buf.Bytes())
+			return filer.SaveInsideFiler(client, filer.IamConfigDirectory, filer.IamIdentityFile, buf.Bytes())
 		}); err != nil {
 			return err
 		}
